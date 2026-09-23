@@ -6,6 +6,31 @@ onMounted(() => {
     initTheme();
     loadStats();
 });
+
+// Standard GTM bootstrap: an inline script (nuxt-security's per-request
+// nonce gets attached to it automatically — see 40-cspSsrNonce.js) that
+// dynamically inserts gtm.js, which 'strict-dynamic' then trusts without
+// needing googletagmanager.com on any allowlist. The noscript fallback goes
+// as high in <body> as possible per Google's own installation instructions.
+// GA4 (G-8QL6BS79M9) is wired up as a tag *inside* this container via GTM's
+// own dashboard, not from here — this file only loads the container itself.
+const { public: { gtmId } } = useRuntimeConfig();
+
+useHead({
+    script: [
+        {
+            key: 'gtm-init',
+            innerHTML: `(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','${gtmId}');`,
+        },
+    ],
+    noscript: [
+        {
+            key: 'gtm-noscript',
+            innerHTML: `<iframe src="https://www.googletagmanager.com/ns.html?id=${gtmId}" height="0" width="0" style="display:none;visibility:hidden"></iframe>`,
+            tagPosition: 'bodyOpen',
+        },
+    ],
+});
 </script>
 
 <template>

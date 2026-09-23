@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { trackEvent } from '../utils/analytics';
 import { FORMATION_DIFFICULTY, formations } from '../utils/formations';
 
 const STEPS = [
@@ -9,6 +10,20 @@ const STEPS = [
 
 const infoOpen = ref(false);
 const statsOpen = ref(false);
+
+function openInfo(): void {
+    infoOpen.value = true;
+    trackEvent('view_how_to_play', { source: 'home' });
+}
+
+function openStats(): void {
+    statsOpen.value = true;
+    trackEvent('view_stats', { source: 'home' });
+}
+
+function selectFormation(formationCode: string): void {
+    trackEvent('select_formation', { formation: formationCode });
+}
 
 useSeoMeta({
     title: 'Exact XI — pick a formation, guess the exact score',
@@ -30,10 +45,10 @@ useSeoMeta({
     <main class="home">
         <div class="home__inner">
             <AppHeader>
-                <button aria-label="How to play" class="home__icon-button" type="button" @click="infoOpen = true">
+                <button aria-label="How to play" class="home__icon-button" type="button" @click="openInfo">
                     <AppIcon name="info" />
                 </button>
-                <button aria-label="Your stats" class="home__icon-button" type="button" @click="statsOpen = true">
+                <button aria-label="Your stats" class="home__icon-button" type="button" @click="openStats">
                     <AppIcon name="stats" />
                 </button>
                 <ThemeToggle />
@@ -62,6 +77,7 @@ useSeoMeta({
                         class="formations__link"
                         :class="`formations__link--${FORMATION_DIFFICULTY[formation.code].tier}`"
                         :to="{ path: '/play', query: { f: formation.code } }"
+                        @click="selectFormation(formation.code)"
                     >
                         <FormationIcon :slots="formation.slots" />
                         <span class="formations__details">

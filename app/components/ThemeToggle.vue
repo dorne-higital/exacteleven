@@ -1,11 +1,16 @@
 <script setup lang="ts">
+import { trackEvent } from '../utils/analytics';
+
 const { theme, setTheme } = useTheme();
 
 const isDugoutDark = computed(() => theme.value === 'dugout-dark');
 const label = computed(() => (isDugoutDark.value ? 'Switch to Match Programme theme' : 'Switch to Dugout Dark theme'));
 
 function toggle(): void {
-    setTheme(isDugoutDark.value ? 'match-programme' : 'dugout-dark');
+    const next = isDugoutDark.value ? 'match-programme' : 'dugout-dark';
+
+    setTheme(next);
+    trackEvent('theme_toggle', { theme: next });
 }
 </script>
 

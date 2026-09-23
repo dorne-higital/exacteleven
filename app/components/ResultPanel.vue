@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ResultTier } from '../../shared/types';
+import { trackEvent } from '../utils/analytics';
 import { describeSlotRole } from '../utils/formations';
 import { getDistance } from '../utils/scoring';
 
@@ -145,6 +146,7 @@ async function handleCopy(): Promise<void> {
     try {
         await navigator.clipboard.writeText(shareText.value);
         copied.value = true;
+        trackEvent('share_copied', { formation: state.value?.formationCode });
         window.clearTimeout(copiedTimeout);
         copiedTimeout = window.setTimeout(() => {
             copied.value = false;

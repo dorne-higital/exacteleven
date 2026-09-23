@@ -1,4 +1,5 @@
 import type { DrawnPlayer, FormationCode, GameSlot, GameState, Player, RevealResult } from '../../shared/types';
+import { trackEvent } from '../utils/analytics';
 import { getFormation } from '../utils/formations';
 import { calculateTotal, getGameResult } from '../utils/scoring';
 
@@ -78,6 +79,7 @@ export function useGame() {
     function startGame(formationCode: FormationCode): void {
         state.value = createInitialState(formationCode);
         writePersistedGame(state.value);
+        trackEvent('game_start', { formation: formationCode, target: state.value.target });
     }
 
     // Restores a game persisted for this exact formation, if one exists —
@@ -92,6 +94,7 @@ export function useGame() {
         }
 
         state.value = persisted;
+        trackEvent('game_resume', { formation: formationCode });
 
         return true;
     }
@@ -132,11 +135,13 @@ export function useGame() {
 
             game.offeredPlayerIds = [...seen];
             writePersistedGame(game);
+            trackEvent('slot_draw', { position: slot.group, formation: game.formationCode });
         } catch {
             // Previously an unhandled rejection: the tapped slot did nothing
             // visible at all, which reads as an unresponsive app rather than
             // a failed network request.
             drawError.value = true;
+            trackEvent('slot_draw_error', { position: slot.group, formation: game.formationCode });
         } finally {
             isDrawing.value = false;
             pendingSlotId.value = null;
@@ -170,6 +175,7 @@ export function useGame() {
         }
 
         game.rerollsLeft -= 1;
+        trackEvent('reroll_used', { formation: game.formationCode });
         await drawForSlot(game.activeSlotId);
 
         return true;
@@ -219,6 +225,7 @@ export function useGame() {
         };
 
         slot.player = player;
+        trackEvent('player_picked', { position: slot.group, playerId: player.id, formation: game.formationCode });
 
         // Deliberately NOT clearing activeSlotId/offeredPlayers here: the
         // dialog stays mounted (and modal) through its own reveal count-up
@@ -240,6 +247,13 @@ export function useGame() {
         if (!game.statsRecorded && outcome.status !== 'playing') {
             game.statsRecorded = true;
             recordOutcome(outcome.status, outcome.tier, game.formationCode);
+            trackEvent('game_over', {
+                formation: game.formationCode,
+                status: outcome.status,
+                tier: outcome.tier,
+                total: game.total,
+                target: game.target,
+            });
         }
 
         writePersistedGame(game);

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { trackEvent } from '../utils/analytics';
 import { getFormation } from '../utils/formations';
 
 const route = useRoute();
@@ -38,6 +39,16 @@ function handleSlotSelect(slotId: string): void {
 const infoOpen = ref(false);
 const statsOpen = ref(false);
 
+function openInfo(): void {
+    infoOpen.value = true;
+    trackEvent('view_how_to_play', { source: 'play', formation: formationCode.value });
+}
+
+function openStats(): void {
+    statsOpen.value = true;
+    trackEvent('view_stats', { source: 'play', formation: formationCode.value });
+}
+
 useSeoMeta({
     title: () => (formation.value ? `${formation.value.code} formation — Exact XI` : 'Exact XI'),
     description: () => (formation.value
@@ -61,10 +72,10 @@ useSeoMeta({
                     <AppIcon name="back" />
                     Formations
                 </NuxtLink>
-                <button aria-label="How to play" class="play__info-button" type="button" @click="infoOpen = true">
+                <button aria-label="How to play" class="play__info-button" type="button" @click="openInfo">
                     <AppIcon name="info" />
                 </button>
-                <button aria-label="Your stats" class="play__info-button" type="button" @click="statsOpen = true">
+                <button aria-label="Your stats" class="play__info-button" type="button" @click="openStats">
                     <AppIcon name="stats" />
                 </button>
                 <ThemeToggle />

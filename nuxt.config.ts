@@ -50,8 +50,26 @@ export default defineNuxtConfig({
         // Override with NUXT_DRAW_TOKEN_SECRET in any real deployment; this
         // fallback is fine for local dev only.
         drawTokenSecret: 'dev-only-insecure-secret-change-in-production',
+        public: {
+            // GTM container id — GA4 (G-8QL6BS79M9) is wired up as a tag
+            // *inside* this container via GTM's own dashboard, not from
+            // here. Override with NUXT_PUBLIC_GTM_ID for a different
+            // container per environment (e.g. a staging workspace).
+            gtmId: 'GTM-KZD42V9R',
+        },
     },
     security: {
+        // script-src doesn't need googletagmanager.com added: the GTM
+        // bootstrap script in app.vue is inline and picks up nuxt-security's
+        // own per-request nonce automatically, and 'strict-dynamic' then
+        // trusts whatever that nonce-trusted script injects (gtm.js itself,
+        // then GA4's own script) without a host allowlist. img-src does need
+        // it — GTM/GA4 fall back to image-pixel beacons in some cases.
+        headers: {
+            contentSecurityPolicy: {
+                'img-src': ["'self'", 'data:', 'https://www.googletagmanager.com', 'https://www.google-analytics.com'],
+            },
+        },
         // In-memory driver — each Netlify Function invocation can land on a
         // different, short-lived instance, so this doesn't guarantee shared
         // state across requests any more than Cloudflare Workers isolates
