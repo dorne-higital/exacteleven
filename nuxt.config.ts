@@ -51,15 +51,6 @@ export default defineNuxtConfig({
         drawTokenSecret: 'dev-only-insecure-secret-change-in-production',
     },
     security: {
-        // nuxt-security's default CSP blocks third-party style-src/font-src
-        // by default; these two hosts are needed for the Google Fonts link
-        // above.
-        headers: {
-            contentSecurityPolicy: {
-                'font-src': ["'self'", 'https://fonts.gstatic.com'],
-                'style-src': ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
-            },
-        },
         // Default driver is in-memory (fine for a single local dev process),
         // but that won't share state across Cloudflare Workers isolates
         // once deployed, so /api/draw and /api/reveal would get no real
