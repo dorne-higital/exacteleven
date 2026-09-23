@@ -2,7 +2,7 @@
 
 Exact XI is a lineup-guessing game for England's top-flight football since 2016/17. Pick a formation, fill all 11 slots from three hidden-stat player options at a time, and try to land your total goals + assists exactly on the formation's own number — anything else lands you somewhere on a league-table outcome ladder, from Champions League down to Relegated.
 
-Built with Nuxt 4, Vue 3 and TypeScript, styled with SCSS, and deployed to Cloudflare Pages via Nitro's `cloudflare-pages` preset.
+Built with Nuxt 4, Vue 3 and TypeScript, styled with SCSS, and deployed to Netlify via Nitro's `netlify` preset.
 
 Requires Node 22+ (see `.nvmrc`).
 
@@ -17,9 +17,7 @@ yarn dev
 
 Copy `.env.example` to `.env` and set `NUXT_DRAW_TOKEN_SECRET` before deploying anywhere real — it signs the anti-peek tokens used by the draw/reveal API (`server/utils/draw-token.ts`) and must not be left at its dev-only default in production.
 
-`NUXT_PUBLIC_SITE_URL` is optional — set it once the real Cloudflare Pages domain is confirmed to correct the canonical/og/sitemap URLs, which otherwise fall back to a placeholder domain in `nuxt.config.ts`.
-
-`NUXT_RATE_LIMITER_KV_BINDING` is optional — set it to a Cloudflare KV namespace's binding name (create the namespace and bind it in the Pages project settings first) to give the `/api/draw` and `/api/reveal` rate limiter a store that's actually shared across Workers isolates. Left unset, it falls back to an in-memory store that only limits requests within a single isolate.
+`NUXT_PUBLIC_SITE_URL` is optional — `nuxt.config.ts`'s `site.url` already defaults to the real production domain, so this is only needed to override it (e.g. for a Netlify deploy-preview URL).
 
 ## Data
 
@@ -49,4 +47,4 @@ yarn typecheck   # run nuxt/vue-tsc type checking
 
 ## Deployment
 
-Targets Cloudflare Pages via Nitro's `cloudflare-pages` preset (`nitro.preset` in `nuxt.config.ts`). Before going live, set `NUXT_DRAW_TOKEN_SECRET` as a real environment variable in the Cloudflare Pages project settings — see [Environment variables](#environment-variables) above.
+Targets Netlify via Nitro's `netlify` preset (`nitro.preset` in `nuxt.config.ts`) — this must match wherever the site is actually hosted, since each Nitro preset builds a runtime-specific server function format that only that host can run. Before going live, set `NUXT_DRAW_TOKEN_SECRET` as a real environment variable in the Netlify site's settings — see [Environment variables](#environment-variables) above.

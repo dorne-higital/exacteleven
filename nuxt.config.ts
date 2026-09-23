@@ -1,6 +1,4 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
-const rateLimiterKvBinding = process.env.NUXT_RATE_LIMITER_KV_BINDING;
-
 export default defineNuxtConfig({
     compatibilityDate: '2025-07-15',
     devtools: { enabled: true },
@@ -42,7 +40,10 @@ export default defineNuxtConfig({
         },
     },
     nitro: {
-        preset: 'cloudflare-pages',
+        // The site actually deploys to Netlify — this must match wherever it's
+        // really hosted, since each preset builds a runtime-specific function
+        // format (Netlify Functions here) that only that host knows how to run.
+        preset: 'netlify',
     },
     runtimeConfig: {
         // Signs the draw -> reveal anti-peek token (see server/utils/draw-token.ts).
@@ -51,17 +52,14 @@ export default defineNuxtConfig({
         drawTokenSecret: 'dev-only-insecure-secret-change-in-production',
     },
     security: {
-        // Default driver is in-memory (fine for a single local dev process),
-        // but that won't share state across Cloudflare Workers isolates
-        // once deployed, so /api/draw and /api/reveal would get no real
-        // cross-request throttling in production. Once a KV namespace is
-        // created and bound in the Cloudflare Pages project settings, set
-        // NUXT_RATE_LIMITER_KV_BINDING to that binding's name to switch to a
-        // shared, durable driver — left unset, this keeps today's default.
+        // In-memory driver — each Netlify Function invocation can land on a
+        // different, short-lived instance, so this doesn't guarantee shared
+        // state across requests any more than Cloudflare Workers isolates
+        // would. A durable option (e.g. a Netlify Blobs-backed unstorage
+        // driver) can replace this later if real cross-request throttling
+        // on /api/draw and /api/reveal becomes a priority.
         rateLimiter: {
-            driver: rateLimiterKvBinding
-                ? { name: 'cloudflareKVBinding', options: { binding: rateLimiterKvBinding } }
-                : { name: 'lruCache' },
+            driver: { name: 'lruCache' },
         },
     },
     // OG image generation pulls in a native renderer dependency; leave it
@@ -70,11 +68,10 @@ export default defineNuxtConfig({
         enabled: false,
     },
     site: {
-        // Falls back to the placeholder pages.dev domain until the real
-        // Cloudflare Pages project/custom domain is confirmed — set
-        // NUXT_PUBLIC_SITE_URL in that project's env vars once it is, rather
-        // than editing this file again.
-        url: process.env.NUXT_PUBLIC_SITE_URL || 'https://exacteleven.pages.dev',
+        // The real, live domain — NUXT_PUBLIC_SITE_URL remains available to
+        // override this (e.g. a Netlify deploy-preview URL) without editing
+        // this file.
+        url: process.env.NUXT_PUBLIC_SITE_URL || 'https://exacteleven.co.uk',
         name: 'Exact XI',
     },
     // The `f` formation-code query param picks the actual page content on
