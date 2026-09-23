@@ -120,6 +120,82 @@ watch(outcome, (value) => {
     }
 });
 
+// A fixed, non-random spread (not Math.random()) — purely cosmetic values
+// like this still don't need real randomness, and staying deterministic
+// costs nothing here.
+const CONFETTI_COLORS = ['var(--color-primary)', '#ffc400', '#ff8a3d', '#4da6ff'];
+const CONFETTI_COUNT = 18;
+
+interface ConfettiPiece {
+    id: number;
+    left: string;
+    color: string;
+    delay: string;
+    rotate: string;
+}
+
+const confettiPieces = computed<ConfettiPiece[]>(() => {
+    if (outcome.value?.tone !== 'win') {
+        return [];
+    }
+
+    return Array.from({ length: CONFETTI_COUNT }, (_, i) => ({
+        id: i,
+        left: `${(i * 53) % 100}%`,
+        color: CONFETTI_COLORS[i % CONFETTI_COLORS.length]!,
+        delay: `${(i % 6) * 0.08}s`,
+        rotate: `${(i * 47) % 360}deg`,
+    }));
+});
+
+// The final total just appearing instantly undersold the one outcome that's
+// actually worth celebrating — counting up to it (skipped for
+// prefers-reduced-motion, and for every non-win outcome, which show the
+// total straight away) gives the Champion result a beat of its own.
+const displayTotal = ref(0);
+let totalAnimationFrame: number | undefined;
+
+watch(outcome, (value) => {
+    const game = state.value;
+
+    if (!value || !game) {
+        return;
+    }
+
+    if (totalAnimationFrame !== undefined) {
+        cancelAnimationFrame(totalAnimationFrame);
+        totalAnimationFrame = undefined;
+    }
+
+    if (value.tone !== 'win' || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        displayTotal.value = game.total;
+
+        return;
+    }
+
+    const target = game.total;
+    const duration = 700;
+    const start = performance.now();
+
+    const tick = (now: number): void => {
+        const progress = Math.min((now - start) / duration, 1);
+
+        displayTotal.value = Math.round(target * progress);
+
+        if (progress < 1) {
+            totalAnimationFrame = requestAnimationFrame(tick);
+        }
+    };
+
+    totalAnimationFrame = requestAnimationFrame(tick);
+}, { immediate: true });
+
+onUnmounted(() => {
+    if (totalAnimationFrame !== undefined) {
+        cancelAnimationFrame(totalAnimationFrame);
+    }
+});
+
 const resultEmoji = computed(() => {
     const game = state.value;
 
@@ -205,6 +281,17 @@ function compactStatCaption(player: { goals: number; assists: number }): string 
 <template>
     <p aria-live="polite" class="result-panel__sr-announcement">{{ srAnnouncement }}</p>
     <section v-if="outcome && state" class="result-panel" :class="`result-panel--${toneClass}`">
+        <div v-if="confettiPieces.length > 0" aria-hidden="true" class="result-panel__confetti">
+            <span
+                v-for="piece in confettiPieces"
+                :key="piece.id"
+                class="result-panel__confetti-piece"
+                :style="{ '--piece-color': piece.color, '--piece-left': piece.left, '--piece-rotate': piece.rotate, animationDelay: piece.delay }"
+            />
+        </div>
+
+        <div v-if="outcome.tone === 'bust'" aria-hidden="true" class="result-panel__stamp">Bust</div>
+
         <h2 class="result-panel__headline">{{ outcome.label }}</h2>
         <p class="result-panel__detail">{{ outcome.detail }}</p>
 
@@ -215,7 +302,7 @@ function compactStatCaption(player: { goals: number; assists: number }): string 
             </div>
             <div class="result-panel__stat">
                 <dt>Total</dt>
-                <dd>{{ state.total }}</dd>
+                <dd>{{ displayTotal }}</dd>
             </div>
             <div v-if="outcome.tone !== 'win'" class="result-panel__stat">
                 <dt>Distance</dt>
@@ -279,7 +366,9 @@ function compactStatCaption(player: { goals: number; assists: number }): string 
 }
 
 // Mobile-first, filling whatever width its parent (.play__inner, capped and
-// centered) already provides — no separate max-width needed here.
+// centered) already provides — no separate max-width needed here. position:
+// relative + overflow: hidden so the confetti and bust stamp below clip
+// cleanly to the card's rounded corners instead of poking past them.
 .result-panel {
     background-color: var(--color-surface);
     border: 1px solid color-mix(in srgb, var(--color-foreground) 15%, transparent);
@@ -288,7 +377,9 @@ function compactStatCaption(player: { goals: number; assists: number }): string 
     display: flex;
     flex-direction: column;
     gap: 1rem;
+    overflow: hidden;
     padding: 1.25rem;
+    position: relative;
     width: 100%;
 }
 
@@ -324,7 +415,100 @@ function compactStatCaption(player: { goals: number; assists: number }): string 
 }
 
 .result-panel--bust {
+    animation: result-panel-bust-flash 0.5s ease-out;
     border-left-color: var(--color-danger);
+}
+
+@keyframes result-panel-bust-flash {
+    0% {
+        background-color: color-mix(in srgb, var(--color-danger) 35%, var(--color-surface));
+    }
+
+    100% {
+        background-color: var(--color-surface);
+    }
+}
+
+// Both purely celebratory/punitive flourishes — z-index above the card's
+// own content (which would otherwise paint over them, since they sit
+// earliest in the markup so screen readers reach the real result first).
+.result-panel__confetti {
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+    position: absolute;
+    z-index: 1;
+}
+
+.result-panel__confetti-piece {
+    animation: result-panel-confetti-fall 1.1s ease-in forwards;
+    background: var(--piece-color);
+    height: 8px;
+    left: var(--piece-left);
+    opacity: 0;
+    position: absolute;
+    top: -10px;
+    width: 6px;
+}
+
+@keyframes result-panel-confetti-fall {
+    0% {
+        opacity: 1;
+        transform: translateY(0) rotate(var(--piece-rotate));
+    }
+
+    100% {
+        opacity: 0;
+        transform: translateY(170px) rotate(calc(var(--piece-rotate) + 180deg));
+    }
+}
+
+.result-panel__stamp {
+    animation: result-panel-stamp-down 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+    border: 3px solid var(--color-danger);
+    border-radius: 6px;
+    color: var(--color-danger);
+    font-family: var(--font-display);
+    font-size: 1.3rem;
+    letter-spacing: 0.1em;
+    padding: 0.15rem 0.85rem;
+    pointer-events: none;
+    position: absolute;
+    right: 1.1rem;
+    text-transform: var(--display-text-transform);
+    top: 1.1rem;
+    transform: rotate(-12deg);
+    z-index: 1;
+}
+
+@keyframes result-panel-stamp-down {
+    0% {
+        opacity: 0;
+        transform: rotate(-12deg) scale(2.2);
+    }
+
+    60% {
+        opacity: 1;
+    }
+
+    100% {
+        opacity: 1;
+        transform: rotate(-12deg) scale(1);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .result-panel--bust {
+        animation: none;
+    }
+
+    .result-panel__confetti {
+        display: none;
+    }
+
+    .result-panel__stamp {
+        animation: none;
+    }
 }
 
 .result-panel__headline {
