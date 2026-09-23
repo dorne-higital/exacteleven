@@ -5,14 +5,26 @@ const route = useRoute();
 const formationCode = computed(() => String(route.query.f ?? ''));
 const formation = computed(() => getFormation(formationCode.value));
 
-const { state, isDrawing, startGame, openSlot } = useGame();
+const { state, isDrawing, pendingSlotId, drawError, startGame, resumeGame, openSlot } = useGame();
 
 // Only (re)start when there's no game yet, or it's for a different formation
 // than this route asks for — revisiting the same formation keeps whatever
-// progress is already in state rather than wiping it out.
+// progress is already in state rather than wiping it out. This runs
+// server-side too (sessionStorage isn't available there), so it always
+// produces a fresh game on first render — resumeGame() below corrects that
+// client-side once mounted, same flash-then-correct pattern useTheme uses.
 if (formation.value && state.value?.formationCode !== formation.value.code) {
     startGame(formation.value.code);
 }
+
+// A hard refresh mid-game re-runs the block above and would otherwise wipe
+// every filled slot — this restores whatever was persisted for the current
+// formation, if anything was.
+onMounted(() => {
+    if (formation.value) {
+        resumeGame(formation.value.code);
+    }
+});
 
 const remainingSlots = computed(() => state.value?.slots.filter((slot) => !slot.player).length ?? 0);
 const gameOver = computed(() => (
@@ -46,30 +58,14 @@ useSeoMeta({
         <div class="play__inner">
             <AppHeader>
                 <NuxtLink aria-label="Back to formation picker" class="play__back" to="/">
-                    <svg aria-hidden="true" fill="none" height="16" viewBox="0 0 24 24" width="16">
-                        <path
-                            d="M19 12H5m0 0 7 7m-7-7 7-7"
-                            stroke="currentColor"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            stroke-width="2"
-                        />
-                    </svg>
+                    <AppIcon name="back" />
                     Formations
                 </NuxtLink>
                 <button aria-label="How to play" class="play__info-button" type="button" @click="infoOpen = true">
-                    <svg aria-hidden="true" fill="none" height="18" viewBox="0 0 24 24" width="18">
-                        <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" />
-                        <path d="M12 11v5.5" stroke="currentColor" stroke-linecap="round" stroke-width="2" />
-                        <circle cx="12" cy="7.75" fill="currentColor" r="1.15" />
-                    </svg>
+                    <AppIcon name="info" />
                 </button>
                 <button aria-label="Your stats" class="play__info-button" type="button" @click="statsOpen = true">
-                    <svg aria-hidden="true" fill="none" height="18" viewBox="0 0 24 24" width="18">
-                        <rect height="8" rx="1" stroke="currentColor" stroke-width="2" width="4" x="4" y="12" />
-                        <rect height="12" rx="1" stroke="currentColor" stroke-width="2" width="4" x="10" y="8" />
-                        <rect height="16" rx="1" stroke="currentColor" stroke-width="2" width="4" x="16" y="4" />
-                    </svg>
+                    <AppIcon name="stats" />
                 </button>
                 <ThemeToggle />
             </AppHeader>
@@ -86,12 +82,18 @@ useSeoMeta({
 
                 <ResultPanel v-if="gameOver" />
 
+                <p v-if="drawError" aria-live="polite" class="play__draw-error">
+                    Couldn't load players for that slot — tap it again to retry.
+                </p>
+
                 <div class="play__board">
                     <Pitch />
                     <PositionSlot
                         v-for="slot in state.slots"
                         :key="slot.id"
                         :busy="isDrawing || gameOver"
+                        :game-over="gameOver"
+                        :loading="pendingSlotId === slot.id"
                         :slot-data="slot"
                         @select="handleSlotSelect"
                     />
@@ -101,7 +103,8 @@ useSeoMeta({
             </template>
 
             <p v-else class="play__error">
-                "{{ formationCode }}" isn't a valid formation.
+                <template v-if="formationCode">"{{ formationCode }}" isn't a valid formation.</template>
+                <template v-else>No formation selected.</template>
                 <NuxtLink to="/">Pick a formation</NuxtLink>
             </p>
         </div>
@@ -155,10 +158,10 @@ useSeoMeta({
     color: inherit;
     cursor: pointer;
     display: flex;
-    height: 2.25rem;
+    height: 2.75rem;
     justify-content: center;
     padding: 0;
-    width: 2.25rem;
+    width: 2.75rem;
 }
 
 .play__info-button:hover,
@@ -179,5 +182,17 @@ useSeoMeta({
 .play__error {
     padding-top: 3rem;
     text-align: center;
+}
+
+.play__draw-error {
+    background-color: color-mix(in srgb, var(--color-danger) 12%, transparent);
+    border-radius: 0.5rem;
+    color: var(--color-danger);
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin: 0;
+    padding: 0.6rem 0.75rem;
+    text-align: center;
+    width: 100%;
 }
 </style>

@@ -115,9 +115,9 @@ function handleNativeClose(): void {
     color: inherit;
     cursor: pointer;
     display: flex;
-    height: 2rem;
+    height: 2.75rem;
     justify-content: center;
-    width: 2rem;
+    width: 2.75rem;
 }
 
 .centered-dialog__close:hover,

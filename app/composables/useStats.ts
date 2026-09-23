@@ -25,6 +25,58 @@ export interface GameStats {
 
 const STATS_STORAGE_KEY = 'exact-xi-stats';
 
+const COUNT_KEYS = ['gamesPlayed', 'wins', 'championsLeague', 'europaLeague', 'midTable', 'avoidedRelegation', 'relegated', 'busts'] as const;
+
+const VALID_OUTCOMES: Outcome[] = ['champion', 'championsLeague', 'europaLeague', 'midTable', 'avoidedRelegation', 'relegated'];
+
+function isNonNegativeInt(value: unknown): value is number {
+    return typeof value === 'number' && Number.isInteger(value) && value >= 0;
+}
+
+// localStorage is user-editable (devtools, other extensions, a stale shape
+// from a previous version of this app) — this is a system boundary, so each
+// field is checked rather than trusting the parsed JSON's shape. Invalid
+// individual fields fall back to their empty-state default rather than
+// discarding the whole record, so one corrupt field doesn't wipe stats that
+// are otherwise fine.
+function sanitizeStats(parsed: unknown): Partial<GameStats> {
+    if (typeof parsed !== 'object' || parsed === null) {
+        return {};
+    }
+
+    const raw = parsed as Record<string, unknown>;
+    const clean: Partial<GameStats> = {};
+
+    for (const key of COUNT_KEYS) {
+        if (isNonNegativeInt(raw[key])) {
+            clean[key] = raw[key] as number;
+        }
+    }
+
+    const formationCodes = new Set(formations.map((formation) => formation.code));
+
+    if (typeof raw.formationPlays === 'object' && raw.formationPlays !== null) {
+        const rawPlays = raw.formationPlays as Record<string, unknown>;
+
+        clean.formationPlays = Object.fromEntries(
+            Object.entries(rawPlays).filter(([code, count]) => formationCodes.has(code as FormationCode) && isNonNegativeInt(count)),
+        ) as Record<FormationCode, number>;
+    }
+
+    if (
+        typeof raw.bestResult === 'object'
+        && raw.bestResult !== null
+        && VALID_OUTCOMES.includes((raw.bestResult as Record<string, unknown>).outcome as Outcome)
+        && formationCodes.has((raw.bestResult as Record<string, unknown>).formationCode as FormationCode)
+    ) {
+        clean.bestResult = raw.bestResult as BestResult;
+    } else if (raw.bestResult === null) {
+        clean.bestResult = null;
+    }
+
+    return clean;
+}
+
 function emptyFormationPlays(): Record<FormationCode, number> {
     return Object.fromEntries(formations.map((formation) => [formation.code, 0])) as Record<FormationCode, number>;
 }
@@ -52,7 +104,7 @@ function readStoredStats(): GameStats {
             return emptyStats();
         }
 
-        const parsed = JSON.parse(raw) as Partial<GameStats>;
+        const parsed = sanitizeStats(JSON.parse(raw));
 
         return {
             ...emptyStats(),

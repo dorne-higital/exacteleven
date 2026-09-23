@@ -96,57 +96,82 @@ export const FORMATION_DIFFICULTY: Record<FormationCode, { label: string; tier: 
     541: { label: 'Hardest', tier: 'hardest' },
 };
 
-// A short human role name derived from a slot's position group, its
-// left/centre/right placement within its row, and how big that row is (a
-// back five's wide slots are wing-backs, not fullbacks; a front two's
-// slots are strikers, not wingers, even though both are technically "wide"
-// by index). Used for both the slot button's accessible label and the
-// result recap, so it lives here rather than being duplicated.
-export function describeSlotRole(group: PositionGroup, side: Slot['side'], rowSize: number): string {
+type SlotRoleKind =
+    | 'goalkeeper'
+    | 'centre-back'
+    | 'fullback'
+    | 'wing-back'
+    | 'central-midfield'
+    | 'wide-midfield'
+    | 'striker'
+    | 'winger';
+
+// The one place a slot's position group, left/centre/right placement, and
+// row size get turned into "what tactical role is this" (a back five's wide
+// slots are wing-backs, not fullbacks; a front two's slots are strikers, not
+// wingers, even though both are technically "wide" by index). describeSlotRole
+// and getSlotShortLabel both build their wording from this single
+// classification instead of each re-implementing the same branching, so the
+// two can no longer drift apart on what counts as which role.
+function slotRoleKind(group: PositionGroup, side: Slot['side'], rowSize: number): SlotRoleKind {
     switch (group) {
         case 'GK':
-            return 'Goalkeeper';
+            return 'goalkeeper';
         case 'DEF':
             if (side === 'Center') {
-                return 'Centre-back';
+                return 'centre-back';
             }
 
-            return rowSize >= 5 ? `${side} wing-back` : `${side}-back`;
+            return rowSize >= 5 ? 'wing-back' : 'fullback';
         case 'MID':
-            return side === 'Center' ? 'Central midfield' : `${side} midfield`;
+            return side === 'Center' ? 'central-midfield' : 'wide-midfield';
         case 'FWD':
-            if (rowSize < 3 || side === 'Center') {
-                return 'Striker';
-            }
+            return rowSize < 3 || side === 'Center' ? 'striker' : 'winger';
+    }
+}
 
+// A short human role name — used for both the slot button's accessible
+// label and the result recap, so it lives here rather than being duplicated.
+export function describeSlotRole(group: PositionGroup, side: Slot['side'], rowSize: number): string {
+    switch (slotRoleKind(group, side, rowSize)) {
+        case 'goalkeeper':
+            return 'Goalkeeper';
+        case 'centre-back':
+            return 'Centre-back';
+        case 'fullback':
+            return `${side}-back`;
+        case 'wing-back':
+            return `${side} wing-back`;
+        case 'central-midfield':
+            return 'Central midfield';
+        case 'wide-midfield':
+            return `${side} midfield`;
+        case 'striker':
+            return 'Striker';
+        case 'winger':
             return `${side} forward`;
-        default:
-            return group;
     }
 }
 
 // The short 2/3-letter tag shown directly on a pitch slot (GK / LB / LWB /
-// CM / ST…). Mirrors describeSlotRole's group/side/rowSize rules exactly so
-// the two never drift apart — only the wording differs.
+// CM / ST…).
 export function getSlotShortLabel(group: PositionGroup, side: Slot['side'], rowSize: number): string {
-    switch (group) {
-        case 'GK':
+    switch (slotRoleKind(group, side, rowSize)) {
+        case 'goalkeeper':
             return 'GK';
-        case 'DEF':
-            if (side === 'Center') {
-                return 'CB';
-            }
-
-            return rowSize >= 5 ? `${side[0]}WB` : `${side[0]}B`;
-        case 'MID':
-            return side === 'Center' ? 'CM' : `${side[0]}M`;
-        case 'FWD':
-            if (rowSize < 3 || side === 'Center') {
-                return 'ST';
-            }
-
+        case 'centre-back':
+            return 'CB';
+        case 'fullback':
+            return `${side[0]}B`;
+        case 'wing-back':
+            return `${side[0]}WB`;
+        case 'central-midfield':
+            return 'CM';
+        case 'wide-midfield':
+            return `${side[0]}M`;
+        case 'striker':
+            return 'ST';
+        case 'winger':
             return `${side[0]}W`;
-        default:
-            return group;
     }
 }

@@ -7,6 +7,14 @@ const SURNAME_CONNECTORS = new Set([
     'der', 'den', 'la', 'le', 'du', 'ter',
 ]);
 
+// Trailing generational/family suffixes (Portuguese/Brazilian naming, or
+// English Jr/Jnr) that sit AFTER the real surname rather than being a
+// surname on their own — e.g. "... de Souza Junior" should shorten to
+// "E. de Souza Junior", not stand alone as "E. Junior". Handled separately
+// from SURNAME_CONNECTORS above since a connector attaches to the word
+// that follows it, while a suffix attaches to the word before it.
+const SURNAME_SUFFIXES = new Set(['junior', 'jr', 'jnr', 'neto', 'filho']);
+
 // Shortens a full player name to "first initial + surname" for the cramped
 // filled-pitch-slot display — e.g. "Erling Haaland" -> "E. Haaland",
 // "Kevin De Bruyne" -> "K. De Bruyne". Only used there: the choice dialog,
@@ -21,7 +29,13 @@ export function shortenPlayerName(fullName: string): string {
 
     const firstInitial = parts[0]!.charAt(0).toUpperCase();
 
-    let surnameStart = parts.length - 1;
+    let surnameEnd = parts.length;
+
+    while (surnameEnd > 2 && SURNAME_SUFFIXES.has(parts[surnameEnd - 1]!.toLowerCase())) {
+        surnameEnd -= 1;
+    }
+
+    let surnameStart = surnameEnd - 1;
 
     while (surnameStart > 1 && SURNAME_CONNECTORS.has(parts[surnameStart - 1]!.toLowerCase())) {
         surnameStart -= 1;

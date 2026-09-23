@@ -32,10 +32,10 @@ function toggle(): void {
     color: inherit;
     cursor: pointer;
     display: flex;
-    height: 2.25rem;
+    height: 2.75rem;
     justify-content: center;
     padding: 0;
-    width: 2.25rem;
+    width: 2.75rem;
 }
 
 .theme-toggle:hover,

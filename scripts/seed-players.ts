@@ -33,6 +33,7 @@ interface PlayerRawRow {
     code: string;
     firstName: string;
     secondName: string;
+    webName: string;
     elementType: string;
     team: string;
 }
@@ -228,6 +229,7 @@ async function loadSeasonPlayersRaw(season: string): Promise<{ byLocalId: Map<st
             code: record.code,
             firstName: record.first_name,
             secondName: record.second_name,
+            webName: record.web_name,
             elementType: record.element_type,
             team: record.team,
         });
@@ -319,7 +321,13 @@ async function main(): Promise<void> {
                 continue;
             }
 
-            const name = `${ref.firstName} ${ref.secondName}`.trim();
+            // FPL's own web_name is the popularly-known football identity
+            // (e.g. "Raya", "Fernandinho") — the concatenated legal name
+            // (e.g. "David Raya Martin", "Fernando Luiz Rosa") is what
+            // players are registered under, not what anyone recognizes them
+            // by. Falls back to the legal name only on the rare row missing
+            // web_name entirely.
+            const name = ref.webName.trim() || `${ref.firstName} ${ref.secondName}`.trim();
             const position = resolvePosition(row, ref);
             const club = resolveClub(row, ref, season, masterTeamList);
             const minutes = Number(row.minutes) || 0;

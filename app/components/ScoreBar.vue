@@ -12,6 +12,11 @@ const props = defineProps<{
 // the aria-live region, so this bar is aria-hidden rather than adding a
 // second, potentially-conflicting accessible representation.
 const progress = computed(() => (props.target > 0 ? Math.min(100, (props.total / props.target) * 100) : 0));
+
+// "Remaining" implies more picks are still possible — once the game has
+// ended (win, bust, or finished), the same count is unfilled slots, not
+// slots still up for grabs.
+const remainingLabel = computed(() => (props.status === 'playing' ? 'Remaining' : 'Unfilled'));
 </script>
 
 <template>
@@ -22,13 +27,21 @@ const progress = computed(() => (props.target > 0 ? Math.min(100, (props.total /
                 <span class="score-bar__value">{{ target }}</span>
             </div>
 
-            <div aria-live="polite" class="score-bar__item">
+            <!--
+                No aria-live here: `total` only ever changes while
+                PlayerChoiceDialog is open as a modal <dialog>, which makes
+                everything outside it (this bar included) inert and excluded
+                from the accessibility tree. The equivalent announcement is
+                made from inside that dialog instead — see its
+                `.player-choice__sr-announcement`.
+            -->
+            <div class="score-bar__item">
                 <span class="score-bar__label">Total</span>
                 <span class="score-bar__value">{{ total }}</span>
             </div>
 
             <div class="score-bar__item">
-                <span class="score-bar__label">Remaining</span>
+                <span class="score-bar__label">{{ remainingLabel }}</span>
                 <span class="score-bar__value">{{ remainingSlots }}</span>
             </div>
         </div>

@@ -37,4 +37,16 @@ describe('shortenPlayerName', () => {
     it('collapses down to only the first initial and final surname for a middle name that is not a connector', () => {
         expect(shortenPlayerName('John Michael Smith')).toBe('J. Smith');
     });
+
+    it('keeps a trailing Portuguese/Brazilian generational suffix attached to the real surname', () => {
+        expect(shortenPlayerName('Norberto Murara Neto')).toBe('N. Murara Neto');
+    });
+
+    it('keeps a trailing suffix attached even when a connector also precedes the surname', () => {
+        expect(shortenPlayerName('Emerson Aparecido Leite de Souza Junior')).toBe('E. de Souza Junior');
+    });
+
+    it('keeps an English Jr suffix attached to the surname', () => {
+        expect(shortenPlayerName('John Smith Jr')).toBe('J. Smith Jr');
+    });
 });

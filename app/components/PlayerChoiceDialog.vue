@@ -20,15 +20,28 @@ const POSITION_NOUNS: Record<PositionGroup, string> = {
 const positionScopeNote = computed(() => {
     const group = state.value?.slots.find((slot) => slot.id === state.value?.activeSlotId)?.group;
     const noun = group ? POSITION_NOUNS[group] : 'player';
+    const base = `Any real ${noun} can turn up here — not narrowed to this exact tactical slot.`;
 
-    return `Any real ${noun} can turn up here — not narrowed to this exact tactical slot.`;
+    // Goals+assists is the scoring stat for every slot, but goalkeepers
+    // rarely register either — most of the pool reveals close to zero
+    // regardless of which one gets picked. Called out so that reads as a
+    // deliberate low-stakes slot rather than a broken or boring one.
+    return group === 'GK' ? `${base} Goalkeepers rarely score or assist, so this pick is usually low-stakes.` : base;
 });
 
 const dialogRef = ref<HTMLDialogElement | null>(null);
+const titleId = useId();
 const revealing = ref(false);
 const showResult = ref(false);
 const revealedName = ref('');
 const displayValue = ref(0);
+const srAnnouncement = ref('');
+const pickError = ref(false);
+// Which candidate the player actually tapped — every option shares the same
+// aria-disabled condition while a pick is revealing, so without this all
+// three dim identically and there's no visual confirmation of which one was
+// chosen during the round trip.
+const pickedId = ref<string | null>(null);
 
 // Purely decorative "reel" text shown in place of each candidate's real name
 // and club/era line for a moment before they settle — the real data is
@@ -54,22 +67,36 @@ const displayMeta = ref<string[]>([]);
 const settled = ref<boolean[]>([]);
 const isScrambling = computed(() => settled.value.some((flag) => !flag));
 
-let scrambleIntervals: number[] = [];
-let scrambleTimeouts: number[] = [];
+// showModal() autofocuses the first option while it's still scrambling, so a
+// screen reader user's first announcement is the placeholder "Loading
+// option" label with nothing telling them when the real names land — this
+// fires that missing announcement once, the moment every option has settled.
+watch(isScrambling, (scrambling, wasScrambling) => {
+    if (wasScrambling && !scrambling) {
+        srAnnouncement.value = 'Players ready';
+    }
+});
 
-function clearScrambleTimers(): void {
-    scrambleIntervals.forEach((id) => window.clearInterval(id));
-    scrambleTimeouts.forEach((id) => window.clearTimeout(id));
-    scrambleIntervals = [];
-    scrambleTimeouts = [];
+const SCRAMBLE_TICK_MS = 60;
+
+let scrambleFrame: number | null = null;
+
+function stopScramble(): void {
+    if (scrambleFrame !== null) {
+        window.cancelAnimationFrame(scrambleFrame);
+        scrambleFrame = null;
+    }
 }
 
 // Kicks off the reel effect for a freshly-drawn set of candidates — called on
 // both the initial draw and after a reroll. Each option settles on its real
 // name one after another, like slot-machine reels landing. Skipped entirely
-// under reduced motion, matching animateCountUp's approach below.
+// under reduced motion, matching animateCountUp's approach below. Driven by
+// one requestAnimationFrame loop covering every candidate, rather than a
+// per-candidate setInterval + setTimeout pair (up to 6 live timers for a
+// 3-item list) — same visual result, far less timer/reactivity churn.
 function startScramble(items: DrawnPlayer[]): void {
-    clearScrambleTimers();
+    stopScramble();
 
     const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -85,33 +112,51 @@ function startScramble(items: DrawnPlayer[]): void {
     displayMeta.value = items.map(() => randomFiller(FILLER_CLUBS));
     settled.value = items.map(() => false);
 
-    items.forEach((item, index) => {
-        const intervalId = window.setInterval(() => {
-            displayNames.value[index] = randomFiller(FILLER_SURNAMES);
-            displayMeta.value[index] = randomFiller(FILLER_CLUBS);
-        }, 60);
+    const start = performance.now();
+    const settleAt = items.map((_, index) => 500 + index * 150);
+    const lastTickAt = items.map(() => 0);
 
-        scrambleIntervals.push(intervalId);
+    function tick(now: number): void {
+        const elapsed = now - start;
+        let stillScrambling = false;
 
-        const timeoutId = window.setTimeout(() => {
-            window.clearInterval(intervalId);
-            displayNames.value[index] = item.name;
-            displayMeta.value[index] = eraLabel(item);
-            settled.value[index] = true;
-        }, 500 + index * 150);
+        items.forEach((item, index) => {
+            if (settled.value[index]) {
+                return;
+            }
 
-        scrambleTimeouts.push(timeoutId);
-    });
+            if (elapsed >= settleAt[index]!) {
+                displayNames.value[index] = item.name;
+                displayMeta.value[index] = eraLabel(item);
+                settled.value[index] = true;
+
+                return;
+            }
+
+            stillScrambling = true;
+
+            if (elapsed - lastTickAt[index]! >= SCRAMBLE_TICK_MS) {
+                displayNames.value[index] = randomFiller(FILLER_SURNAMES);
+                displayMeta.value[index] = randomFiller(FILLER_CLUBS);
+                lastTickAt[index] = elapsed;
+            }
+        });
+
+        scrambleFrame = stillScrambling ? window.requestAnimationFrame(tick) : null;
+    }
+
+    scrambleFrame = window.requestAnimationFrame(tick);
 }
 
 watch(candidates, (items) => {
     if (items.length > 0) {
         startScramble(items);
+        pickedId.value = null;
     }
 }, { immediate: true });
 
 onUnmounted(() => {
-    clearScrambleTimers();
+    stopScramble();
 });
 
 onMounted(() => {
@@ -160,17 +205,30 @@ async function handlePick(candidate: DrawnPlayer): Promise<void> {
     revealing.value = true;
     revealedName.value = candidate.name;
     displayValue.value = 0;
+    pickError.value = false;
+    pickedId.value = candidate.id;
 
     const result = await pickPlayer(candidate);
 
     if (!result) {
         revealing.value = false;
+        pickError.value = true;
+        pickedId.value = null;
 
         return;
     }
 
     showResult.value = true;
     await animateCountUp(result.goals + result.assists);
+
+    // Announced once, after the count-up settles, rather than relying on the
+    // rapidly-changing visible number (which is aria-hidden below) or on
+    // ScoreBar's Total — that field sits outside this modal dialog and is
+    // inert, so screen readers never see it change while this is open.
+    const total = state.value?.total ?? 0;
+    const target = state.value?.target ?? 0;
+
+    srAnnouncement.value = `${revealedName.value}: ${result.goals + result.assists}. Running total ${total} of target ${target}.`;
 
     window.setTimeout(() => {
         dialogRef.value?.close();
@@ -185,6 +243,7 @@ async function handleReroll(): Promise<void> {
         return;
     }
 
+    pickError.value = false;
     await useReroll();
 }
 
@@ -197,10 +256,12 @@ function handleNativeClose(): void {
 </script>
 
 <template>
-    <dialog ref="dialogRef" class="player-choice" @close="handleNativeClose">
+    <dialog ref="dialogRef" :aria-labelledby="titleId" class="player-choice" @close="handleNativeClose">
         <div aria-hidden="true" class="player-choice__handle" />
 
-        <h2 class="player-choice__title">Pick a player</h2>
+        <h2 :id="titleId" class="player-choice__title">Pick a player</h2>
+
+        <p aria-live="polite" class="player-choice__sr-announcement">{{ srAnnouncement }}</p>
 
         <p v-if="!showResult" class="player-choice__scope-note">{{ positionScopeNote }}</p>
 
@@ -210,7 +271,10 @@ function handleNativeClose(): void {
                     class="player-choice__option"
                     :aria-disabled="revealing || isDrawing || isScrambling"
                     :aria-label="settled[index] ? `${candidate.name} — ${eraLabel(candidate)}` : 'Loading option'"
-                    :class="{ 'player-choice__option--scrambling': !settled[index] }"
+                    :class="{
+                        'player-choice__option--picked': pickedId === candidate.id,
+                        'player-choice__option--scrambling': !settled[index],
+                    }"
                     type="button"
                     @click="handlePick(candidate)"
                 >
@@ -220,9 +284,13 @@ function handleNativeClose(): void {
             </li>
         </ul>
 
-        <div v-else class="player-choice__result">
+        <p v-if="pickError && !showResult" aria-live="polite" class="player-choice__error">
+            Couldn't reveal that pick — tap the player again to retry.
+        </p>
+
+        <div v-if="showResult" class="player-choice__result">
             <p class="player-choice__result-name">{{ revealedName }}</p>
-            <p aria-live="polite" class="player-choice__result-value">{{ displayValue }}</p>
+            <p aria-hidden="true" class="player-choice__result-value">{{ displayValue }}</p>
         </div>
 
         <button
@@ -337,10 +405,35 @@ function handleNativeClose(): void {
     margin: 0 0 0.4rem;
 }
 
+// Visually hidden but always present (not v-if'd) so screen readers pick up
+// its text changes reliably — an element that appears for the first time
+// with aria-live already set is inconsistently announced across AT.
+.player-choice__sr-announcement {
+    border: 0;
+    clip-path: inset(50%);
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    padding: 0;
+    position: absolute;
+    white-space: nowrap;
+    width: 1px;
+}
+
 .player-choice__scope-note {
     color: color-mix(in srgb, var(--color-foreground) 70%, transparent);
     font-size: 0.75rem;
     margin: 0 0 0.9rem;
+}
+
+.player-choice__error {
+    background-color: color-mix(in srgb, var(--color-danger) 12%, transparent);
+    border-radius: 0.5rem;
+    color: var(--color-danger);
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin: 0.75rem 0 0;
+    padding: 0.6rem 0.75rem;
 }
 
 .player-choice__list {
@@ -380,6 +473,15 @@ function handleNativeClose(): void {
 .player-choice__option:not([aria-disabled='true']):hover,
 .player-choice__option:not([aria-disabled='true']):focus-visible {
     border-color: var(--color-primary);
+}
+
+// Overrides the generic dimmed-disabled look above for specifically the
+// option the player tapped, so it stays visually confirmed rather than
+// fading identically to the two they didn't choose.
+.player-choice__option--picked[aria-disabled='true'] {
+    background-color: color-mix(in srgb, var(--color-primary) 12%, transparent);
+    border-color: var(--color-primary);
+    opacity: 1;
 }
 
 .player-choice__name {
@@ -422,8 +524,8 @@ function handleNativeClose(): void {
     color: color-mix(in srgb, var(--color-foreground) 70%, transparent);
     cursor: pointer;
     font-size: 0.8rem;
-    margin-top: 1rem;
-    padding: 0;
+    margin: 0.5rem 0 0;
+    padding: 0.5rem 0;
     text-decoration: underline;
 }
 

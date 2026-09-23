@@ -7,6 +7,10 @@ const props = defineProps<{
     slotData: GameSlot;
     /** Disables the slot while a draw is in flight elsewhere, or the game has ended. */
     busy?: boolean;
+    /** True while THIS specific slot's draw request is in flight — shows a pulse distinct from every other slot's shared `busy`-disabled look. */
+    loading?: boolean;
+    /** True once the game has ended — dims a slot that never got filled instead of leaving it looking identically tappable to a normal empty one. */
+    gameOver?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -18,6 +22,7 @@ const shortLabel = computed(() => getSlotShortLabel(props.slotData.group, props.
 const label = computed(() => (
     props.slotData.player ? `${description.value}, ${props.slotData.player.name}` : `${description.value}, empty`
 ));
+const isEndedEmpty = computed(() => Boolean(props.gameOver) && !props.slotData.player);
 
 function handleClick(): void {
     if (props.slotData.player || props.busy) {
@@ -31,7 +36,15 @@ function handleClick(): void {
 <template>
     <button
         :aria-label="label"
-        :class="['position-slot', { 'position-slot--filled': slotData.player }]"
+        :class="[
+            'position-slot',
+            {
+                'position-slot--ended': isEndedEmpty,
+                'position-slot--filled': slotData.player,
+                'position-slot--loading': loading,
+                'position-slot--tight': slotData.rowSize >= 5,
+            },
+        ]"
         :disabled="Boolean(slotData.player) || busy"
         :style="{ left: `${slotData.x}%`, top: `${slotData.y}%` }"
         type="button"
@@ -41,7 +54,7 @@ function handleClick(): void {
             <span class="position-slot__total">{{ slotData.player.goals + slotData.player.assists }}</span>
             <span class="position-slot__name">{{ shortenPlayerName(slotData.player.name) }}</span>
         </template>
-        <span v-else class="position-slot__group">{{ shortLabel }}</span>
+        <span v-else class="position-slot__group">{{ isEndedEmpty ? '—' : shortLabel }}</span>
     </button>
 </template>
 
@@ -82,6 +95,40 @@ function handleClick(): void {
     background-color: var(--color-surface);
     border: 1.5px solid var(--color-primary);
     color: var(--slot-filled-text);
+}
+
+// 5-wide rows (back-five DEF, or the 5-wide MID row) sit closer together
+// than the base max-width allows — capping growth here (rather than the
+// usual 5rem a filled slot can reach) keeps neighbouring slots from
+// visually overlapping once they show a player name.
+.position-slot--tight {
+    max-width: 3.5rem;
+}
+
+.position-slot--ended {
+    opacity: 0.45;
+}
+
+@keyframes position-slot-loading-pulse {
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.5;
+    }
+}
+
+.position-slot--loading {
+    animation: position-slot-loading-pulse 0.9s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .position-slot--loading {
+        animation: none;
+        opacity: 0.6;
+    }
 }
 
 .position-slot__group {

@@ -62,7 +62,7 @@ const OUTCOME_ORDER: readonly Outcome[] = [
     'relegated', 'avoidedRelegation', 'midTable', 'europaLeague', 'championsLeague', 'champion',
 ];
 
-export function outcomeRank(outcome: Outcome): number {
+function outcomeRank(outcome: Outcome): number {
     return OUTCOME_ORDER.indexOf(outcome);
 }
 

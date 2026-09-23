@@ -10,12 +10,6 @@ export interface Player {
     clubs: string[];
     firstSeason: number;
     lastSeason: number;
-    nationality?: string;
-    /**
-     * Set only for players whose career predates the 2006/07 season, when
-     * assist tracking across the league became consistently reliable.
-     */
-    assistsConfidence?: 'low';
 }
 
 // The only seven three-digit formations that field 10 outfield players
@@ -65,7 +59,7 @@ export interface GameSlot extends Slot {
 // hidden score (goals/assists) per D2. `token` proves — via server-side
 // signature verification, not client trust — that this exact player was
 // genuinely offered in this game, so /api/reveal can check it later.
-export type DrawnPlayer = Omit<Player, 'goals' | 'assists' | 'nationality' | 'assistsConfidence' | 'position'> & {
+export type DrawnPlayer = Omit<Player, 'goals' | 'assists' | 'position'> & {
     token: string;
 };
 
@@ -75,6 +69,8 @@ export interface RevealResult {
 }
 
 export interface GameState {
+    /** Random per-playthrough id, minted client-side at startGame() and bound into every draw token's signature so a token can't be replayed outside the game it was issued for. */
+    gameId: string;
     formationCode: FormationCode;
     target: number;
     slots: GameSlot[];

@@ -4,7 +4,7 @@ import { FORMATION_DIFFICULTY, formations } from '../utils/formations';
 const STEPS = [
     { number: '1', title: 'Pick a formation', detail: 'Its digits become your target.' },
     { number: '2', title: 'Fill the XI', detail: '3 hidden-stat players per slot.' },
-    { number: '3', title: 'Land the number', detail: 'Exact is a win. Close ranks you on the table.' },
+    { number: '3', title: 'Land the number', detail: 'Exact wins. Going over busts the game.' },
 ];
 
 const infoOpen = ref(false);
@@ -12,7 +12,7 @@ const statsOpen = ref(false);
 
 useSeoMeta({
     title: 'Exact XI — pick a formation, guess the exact score',
-    description: 'A line-up guessing game for England\'s top-flight football since 2016/17. Pick a formation, fill all 11 slots from three hidden players a time, and try to land your total goals plus assists exactly on target.',
+    description: 'A line-up guessing game for England\'s top-flight football since 2016/17 — pick a formation and land your goals + assists total exactly on target.',
     ogTitle: 'Exact XI',
     ogDescription: 'Pick a formation, fill the XI, and try to land on the exact score — real top-flight players since 2016/17.',
     ogImage: '/og-image.png',
@@ -31,18 +31,10 @@ useSeoMeta({
         <div class="home__inner">
             <AppHeader>
                 <button aria-label="How to play" class="home__icon-button" type="button" @click="infoOpen = true">
-                    <svg aria-hidden="true" fill="none" height="18" viewBox="0 0 24 24" width="18">
-                        <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" />
-                        <path d="M12 11v5.5" stroke="currentColor" stroke-linecap="round" stroke-width="2" />
-                        <circle cx="12" cy="7.75" fill="currentColor" r="1.15" />
-                    </svg>
+                    <AppIcon name="info" />
                 </button>
                 <button aria-label="Your stats" class="home__icon-button" type="button" @click="statsOpen = true">
-                    <svg aria-hidden="true" fill="none" height="18" viewBox="0 0 24 24" width="18">
-                        <rect height="8" rx="1" stroke="currentColor" stroke-width="2" width="4" x="4" y="12" />
-                        <rect height="12" rx="1" stroke="currentColor" stroke-width="2" width="4" x="10" y="8" />
-                        <rect height="16" rx="1" stroke="currentColor" stroke-width="2" width="4" x="16" y="4" />
-                    </svg>
+                    <AppIcon name="stats" />
                 </button>
                 <ThemeToggle />
             </AppHeader>
@@ -71,10 +63,10 @@ useSeoMeta({
                         :class="`formations__link--${FORMATION_DIFFICULTY[formation.code].tier}`"
                         :to="{ path: '/play', query: { f: formation.code } }"
                     >
-                        <span class="formations__code">{{ formation.code }}</span>
+                        <FormationIcon :slots="formation.slots" />
                         <span class="formations__details">
+                            <span class="formations__code">{{ formation.code }}</span>
                             <span class="formations__rows">{{ formation.rows[0] }} DEF · {{ formation.rows[1] }} MID · {{ formation.rows[2] }} FWD</span>
-                            <span class="formations__target">Target {{ formation.target }}</span>
                         </span>
                         <span class="formations__tag" :class="`formations__tag--${FORMATION_DIFFICULTY[formation.code].tier}`">
                             {{ FORMATION_DIFFICULTY[formation.code].label }}
@@ -120,10 +112,10 @@ useSeoMeta({
     color: inherit;
     cursor: pointer;
     display: flex;
-    height: 2.25rem;
+    height: 2.75rem;
     justify-content: center;
     padding: 0;
-    width: 2.25rem;
+    width: 2.75rem;
 }
 
 .home__icon-button:hover,
@@ -225,30 +217,24 @@ useSeoMeta({
     border-left-color: var(--color-danger);
 }
 
-.formations__code {
-    flex-shrink: 0;
-    font-family: var(--font-display);
-    font-size: 1.5rem;
-    font-weight: 700;
-    width: 3.25rem;
-}
-
 .formations__details {
     display: flex;
     flex-direction: column;
     flex-grow: 1;
-    gap: 0.15rem;
     min-width: 0;
 }
 
-.formations__rows {
-    font-size: 0.8rem;
-    font-weight: 600;
+.formations__code {
+    font-family: var(--font-display);
+    font-size: 1.25rem;
+    font-weight: 700;
+    line-height: 1;
 }
 
-.formations__target {
-    color: color-mix(in srgb, var(--color-foreground) 65%, transparent);
+.formations__rows {
+    color: color-mix(in srgb, var(--color-foreground) 70%, transparent);
     font-size: 0.75rem;
+    margin-top: 0.25rem;
 }
 
 .formations__tag {

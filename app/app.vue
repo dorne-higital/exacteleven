@@ -46,7 +46,11 @@ onMounted(() => {
     // Pitch-slot colors are separate from the page-level surface/foreground
     // pair: a slot always sits on the pitch (see Pitch.vue), so "what reads
     // well here" depends on the pitch's own color, not the page background.
-    --slot-empty-bg: rgb(255 255 255 / 16%);
+    // A 16% white tint here (measured, not just eyeballed) put white slot
+    // label text at 3.81:1 against the composited backdrop, short of WCAG
+    // AA's 4.5:1 for normal-size text — 6% keeps the same frosted-glass
+    // look while landing at 4.63:1.
+    --slot-empty-bg: rgb(255 255 255 / 6%);
     --slot-empty-border: rgb(255 255 255 / 55%);
     --slot-empty-text: #fff;
     --slot-filled-text: var(--color-foreground);

@@ -53,6 +53,13 @@ const { state, startGame } = useGame();
 
 const recap = computed(() => (state.value?.slots ?? []).filter((slot) => slot.player));
 
+// Visually hidden but always present (not inside the v-if'd section below)
+// so screen readers pick up its text change reliably — an element that
+// enters the DOM for the first time with aria-live already set is
+// inconsistently announced across AT (same reasoning as
+// PlayerChoiceDialog's srAnnouncement).
+const srAnnouncement = ref('');
+
 const outcome = computed<Outcome | null>(() => {
     const game = state.value;
 
@@ -92,6 +99,12 @@ const TONE_CLASS: Record<Tone, string> = {
 
 const toneClass = computed(() => (outcome.value ? TONE_CLASS[outcome.value.tone] : ''));
 
+watch(outcome, (value) => {
+    if (value) {
+        srAnnouncement.value = `${value.label}. ${value.detail}`;
+    }
+});
+
 const resultEmoji = computed(() => {
     const game = state.value;
 
@@ -110,10 +123,15 @@ const resultEmoji = computed(() => {
     return game.tier ? TIER_EMOJI[game.tier] : '';
 });
 
+const siteConfig = useSiteConfig();
+
+// Wordle-style share text only works as a growth loop if a curious reader
+// can actually tap through — without a trailing link, a copy-pasted result
+// gives them nothing to click.
 const shareText = computed(() => {
     const game = state.value;
 
-    return game ? `Exact XI · ${game.formationCode} ${resultEmoji.value} ${game.total}/${game.target}` : '';
+    return game ? `Exact XI · ${game.formationCode} ${resultEmoji.value} ${game.total}/${game.target}\n${siteConfig.url}` : '';
 });
 
 const copied = ref(false);
@@ -162,7 +180,8 @@ function statCaption(player: { goals: number; assists: number }): string {
 </script>
 
 <template>
-    <section v-if="outcome && state" aria-live="polite" class="result-panel" :class="`result-panel--${toneClass}`">
+    <p aria-live="polite" class="result-panel__sr-announcement">{{ srAnnouncement }}</p>
+    <section v-if="outcome && state" class="result-panel" :class="`result-panel--${toneClass}`">
         <h2 class="result-panel__headline">{{ outcome.label }}</h2>
         <p class="result-panel__detail">{{ outcome.detail }}</p>
 
@@ -209,6 +228,21 @@ function statCaption(player: { goals: number; assists: number }): string {
 </template>
 
 <style lang="scss" scoped>
+// Visually hidden but always present (not v-if'd) so screen readers pick up
+// its text changes reliably — an element that appears for the first time
+// with aria-live already set is inconsistently announced across AT.
+.result-panel__sr-announcement {
+    border: 0;
+    clip-path: inset(50%);
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    padding: 0;
+    position: absolute;
+    white-space: nowrap;
+    width: 1px;
+}
+
 // Mobile-first, filling whatever width its parent (.play__inner, capped and
 // centered) already provides — no separate max-width needed here.
 .result-panel {

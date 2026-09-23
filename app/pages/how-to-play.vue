@@ -2,6 +2,13 @@
 useSeoMeta({
     title: 'How to play — Exact XI',
     description: 'The rules of Exact XI in plain language: formations, hidden stats, busts, the win window, rerolls and repeats.',
+    ogTitle: 'How to play — Exact XI',
+    ogImage: '/og-image.png',
+    ogImageWidth: 1200,
+    ogImageHeight: 630,
+    ogImageAlt: 'Exact XI logo on a dark background',
+    twitterCard: 'summary_large_image',
+    twitterImage: '/og-image.png',
 });
 </script>
 
@@ -10,15 +17,7 @@ useSeoMeta({
         <div class="how-to-play__inner">
             <AppHeader>
                 <NuxtLink class="how-to-play__back" to="/">
-                    <svg aria-hidden="true" fill="none" height="16" viewBox="0 0 24 24" width="16">
-                        <path
-                            d="M19 12H5m0 0 7 7m-7-7 7-7"
-                            stroke="currentColor"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            stroke-width="2"
-                        />
-                    </svg>
+                    <AppIcon name="back" />
                     Home
                 </NuxtLink>
                 <ThemeToggle />

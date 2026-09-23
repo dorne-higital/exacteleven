@@ -3,15 +3,16 @@ import { verifyPlayerToken } from '../utils/draw-token';
 import { getPlayerById } from '../utils/players';
 
 export default defineEventHandler(async (event): Promise<RevealResult> => {
-    const body = await readBody<{ token?: unknown }>(event);
+    const body = await readBody<{ token?: unknown; gameId?: unknown }>(event);
     const token = typeof body?.token === 'string' ? body.token : '';
+    const gameId = typeof body?.gameId === 'string' ? body.gameId : '';
 
-    if (!token) {
-        throw createError({ statusCode: 400, statusMessage: 'token is required.' });
+    if (!token || !gameId) {
+        throw createError({ statusCode: 400, statusMessage: 'token and gameId are required.' });
     }
 
     const secret = useRuntimeConfig().drawTokenSecret;
-    const playerId = await verifyPlayerToken(token, secret);
+    const playerId = await verifyPlayerToken(token, gameId, secret);
 
     if (!playerId) {
         // Either tampered with, or a valid-looking token for a player id that

@@ -1,8 +1,39 @@
-import type { DrawnPlayer, FormationCode, GameState, Player, RevealResult } from '../../shared/types';
+import type { DrawnPlayer, FormationCode, GameSlot, GameState, Player, RevealResult } from '../../shared/types';
 import { getFormation } from '../utils/formations';
 import { calculateTotal, getGameResult } from '../utils/scoring';
 
 const REROLLS_PER_GAME = 1;
+const GAME_STORAGE_KEY = 'exact-xi-game';
+
+// Persisted to sessionStorage (not localStorage — a stale in-progress game
+// shouldn't survive into a brand new tab/session) so a hard refresh mid-game
+// doesn't silently discard every filled slot. Same guarded-try/catch shape
+// as useStats.ts's read/write pair.
+function readPersistedGame(): GameState | null {
+    try {
+        const raw = window.sessionStorage.getItem(GAME_STORAGE_KEY);
+
+        return raw ? (JSON.parse(raw) as GameState) : null;
+    } catch {
+        return null;
+    }
+}
+
+function writePersistedGame(game: GameState | null): void {
+    try {
+        if (game) {
+            window.sessionStorage.setItem(GAME_STORAGE_KEY, JSON.stringify(game));
+        } else {
+            window.sessionStorage.removeItem(GAME_STORAGE_KEY);
+        }
+    } catch {
+        // Private-mode/blocked storage — the game just won't survive a reload this time.
+    }
+}
+
+function findSlot(game: GameState, slotId: string | null): GameSlot | undefined {
+    return game.slots.find((candidate) => candidate.id === slotId);
+}
 
 function createInitialState(formationCode: FormationCode): GameState {
     const formation = getFormation(formationCode);
@@ -12,6 +43,7 @@ function createInitialState(formationCode: FormationCode): GameState {
     }
 
     return {
+        gameId: crypto.randomUUID(),
         formationCode,
         target: formation.target,
         slots: formation.slots.map((slot) => ({ ...slot, player: null })),
@@ -34,9 +66,34 @@ export function useGame() {
     // dialog agree on it, preventing two draws racing on the same exclusion
     // list — which could otherwise let D6's "no repeats" rule slip.
     const isDrawing = useState<boolean>('exact-xi-drawing', () => false);
+    // Which slot a draw is currently in flight for — set before the fetch
+    // starts (unlike GameState.activeSlotId, which only updates once the
+    // draw succeeds) so PositionSlot can show a loading state on the exact
+    // slot the player tapped, not just a generic "everything's disabled".
+    const pendingSlotId = useState<string | null>('exact-xi-pending-slot', () => null);
+    // Set when a draw request fails outright (network drop, server error) so
+    // play.vue can tell the player the tap didn't silently do nothing.
+    const drawError = useState<boolean>('exact-xi-draw-error', () => false);
 
     function startGame(formationCode: FormationCode): void {
         state.value = createInitialState(formationCode);
+        writePersistedGame(state.value);
+    }
+
+    // Restores a game persisted for this exact formation, if one exists —
+    // called from play.vue's onMounted, before it would otherwise fall back
+    // to startGame(). Returns whether a matching game was found, so the
+    // caller only needs to start a fresh one when this returns false.
+    function resumeGame(formationCode: FormationCode): boolean {
+        const persisted = readPersistedGame();
+
+        if (!persisted || persisted.formationCode !== formationCode) {
+            return false;
+        }
+
+        state.value = persisted;
+
+        return true;
     }
 
     // D6: once offered in any slot's dialog, a player is excluded from every
@@ -49,17 +106,19 @@ export function useGame() {
             return;
         }
 
-        const slot = game.slots.find((candidate) => candidate.id === slotId);
+        const slot = findSlot(game, slotId);
 
         if (!slot) {
             return;
         }
 
         isDrawing.value = true;
+        pendingSlotId.value = slotId;
+        drawError.value = false;
 
         try {
             const candidates = await $fetch<DrawnPlayer[]>('/api/draw', {
-                query: { position: slot.group, exclude: game.offeredPlayerIds.join(',') },
+                query: { position: slot.group, exclude: game.offeredPlayerIds.join(','), gameId: game.gameId },
             });
 
             game.activeSlotId = slotId;
@@ -72,8 +131,15 @@ export function useGame() {
             }
 
             game.offeredPlayerIds = [...seen];
+            writePersistedGame(game);
+        } catch {
+            // Previously an unhandled rejection: the tapped slot did nothing
+            // visible at all, which reads as an unresponsive app rather than
+            // a failed network request.
+            drawError.value = true;
         } finally {
             isDrawing.value = false;
+            pendingSlotId.value = null;
         }
     }
 
@@ -84,7 +150,7 @@ export function useGame() {
             return;
         }
 
-        const slot = game.slots.find((candidate) => candidate.id === slotId);
+        const slot = findSlot(game, slotId);
 
         if (!slot || slot.player) {
             return;
@@ -116,7 +182,7 @@ export function useGame() {
             return null;
         }
 
-        const slot = game.slots.find((candidate) => candidate.id === game.activeSlotId);
+        const slot = findSlot(game, game.activeSlotId);
 
         if (!slot || slot.player) {
             return null;
@@ -125,10 +191,20 @@ export function useGame() {
         // D2: goals/assists only ever arrive here, after a pick — never in the
         // draw response. reveal itself re-checks (server-side) that `chosen`
         // was genuinely offered in this game before returning anything.
-        const result = await $fetch<RevealResult>('/api/reveal', {
-            method: 'POST',
-            body: { token: chosen.token },
-        });
+        // Caught rather than left to reject: a network drop or edge error
+        // here used to leave PlayerChoiceDialog's `revealing` flag stuck
+        // true forever, permanently disabling every option with no
+        // indication anything had gone wrong.
+        let result: RevealResult;
+
+        try {
+            result = await $fetch<RevealResult>('/api/reveal', {
+                method: 'POST',
+                body: { token: chosen.token, gameId: game.gameId },
+            });
+        } catch {
+            return null;
+        }
 
         const player: Player = {
             id: chosen.id,
@@ -166,6 +242,8 @@ export function useGame() {
             recordOutcome(outcome.status, outcome.tier, game.formationCode);
         }
 
+        writePersistedGame(game);
+
         return result;
     }
 
@@ -178,16 +256,21 @@ export function useGame() {
 
         game.activeSlotId = null;
         game.offeredPlayers = [];
+        writePersistedGame(game);
     }
 
     function reset(): void {
         state.value = null;
+        writePersistedGame(null);
     }
 
     return {
         state,
         isDrawing,
+        pendingSlotId,
+        drawError,
         startGame,
+        resumeGame,
         openSlot,
         pickPlayer,
         useReroll,

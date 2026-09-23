@@ -8,14 +8,14 @@ import playersData from '../assets/players.json';
 // this and the derived lookups below are naturally cached, not re-read.
 const players = playersData as Player[];
 const playersById = new Map(players.map((player) => [player.id, player]));
+// GK's pool is almost entirely 0 goals+assists (the only stat every slot is
+// scored on) — a known, accepted characteristic of using the same stat
+// across every position, not a data bug. See PlayerChoiceDialog.vue's
+// positionScopeNote, which calls this out to the player for the GK slot.
 const playersByPosition: Record<PositionGroup, Player[]> = { GK: [], DEF: [], MID: [], FWD: [] };
 
 for (const player of players) {
     playersByPosition[player.position].push(player);
-}
-
-export function getAllPlayers(): Player[] {
-    return players;
 }
 
 export function getPlayerById(id: string): Player | undefined {
