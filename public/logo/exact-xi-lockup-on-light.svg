@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 220" role="img" aria-label="Exact XI">
+  <g fill="#14171A">
+    <g transform="translate(57,20)">
+      <rect x="0" y="0" width="11" height="60"/>
+      <rect x="0" y="0" width="46" height="11"/>
+      <rect x="0" y="24.5" width="36" height="11"/>
+      <rect x="0" y="49" width="46" height="11"/>
+    </g>
+    <g transform="translate(117,20)" stroke="#14171A" stroke-width="11" stroke-linecap="square" fill="none">
+      <line x1="0" y1="0" x2="46" y2="60"/>
+      <line x1="46" y1="0" x2="0" y2="60"/>
+    </g>
+    <g transform="translate(177,20)">
+      <g stroke="#14171A" stroke-width="11" stroke-linecap="square" stroke-linejoin="miter" fill="none">
+        <line x1="23" y1="0" x2="0" y2="60"/>
+        <line x1="23" y1="0" x2="46" y2="60"/>
+      </g>
+      <rect x="9" y="33" width="28" height="11"/>
+    </g>
+    <g transform="translate(237,20)">
+      <rect x="0" y="0" width="11" height="60"/>
+      <rect x="0" y="0" width="46" height="11"/>
+      <rect x="0" y="49" width="46" height="11"/>
+    </g>
+    <g transform="translate(297,20)">
+      <rect x="0" y="0" width="46" height="11"/>
+      <rect x="17.5" y="0" width="11" height="60"/>
+    </g>
+  </g>
+
+  <rect x="102" y="94" width="196" height="5" rx="2.5" fill="#B97F2B"/>
+  <rect x="102" y="100" width="90" height="100" rx="10" fill="#14171A"/>
+  <rect x="208" y="100" width="90" height="100" rx="10" fill="#14171A"/>
+  <rect x="112" y="149" width="70" height="2" fill="rgba(255,255,255,0.15)"/>
+  <rect x="218" y="149" width="70" height="2" fill="rgba(255,255,255,0.15)"/>
+
+  <g stroke="#F3F1EA" stroke-width="11" stroke-linecap="square" fill="none">
+    <line x1="125" y1="118" x2="169" y2="182"/>
+    <line x1="169" y1="118" x2="125" y2="182"/>
+  </g>
+  <g fill="#F3F1EA">
+    <rect x="247.5" y="118" width="11" height="64"/>
+    <rect x="238" y="118" width="30" height="11"/>
+    <rect x="238" y="171" width="30" height="11"/>
+  </g>
+</svg>
