@@ -43,25 +43,23 @@ useSeoMeta({
 
 <template>
     <main class="home">
-        <div class="home__inner">
-            <AppHeader>
-                <button aria-label="How to play" class="home__icon-button" type="button" @click="openInfo">
-                    <AppIcon name="info" />
-                </button>
-                <button aria-label="Your stats" class="home__icon-button" type="button" @click="openStats">
-                    <AppIcon name="stats" />
-                </button>
-                <ThemeToggle />
-            </AppHeader>
+        <AppHeader>
+            <button aria-label="How to play" class="home__icon-button" type="button" @click="openInfo">
+                <AppIcon name="info" />
+            </button>
+            <button aria-label="Your stats" class="home__icon-button" type="button" @click="openStats">
+                <AppIcon name="stats" />
+            </button>
+            <ThemeToggle />
+        </AppHeader>
 
-            <div class="home__hero">
-                <img alt="" class="home__mark" height="40" src="/logo/exact-xi-mark-on-light.svg" width="40">
-                <h1>Exact XI</h1>
-                <p>
-                    Pick a formation, then fill the XI to land on the target exactly — goals + assists for every real
-                    player picked, from England's top-flight football since 2016/17.
-                </p>
-            </div>
+        <div class="home__inner">
+            <h1 class="home__visually-hidden-title">Exact XI</h1>
+
+            <p class="home__lede">
+                Pick a formation, then fill the XI to land on the target exactly — goals + assists for every real
+                player picked, from England's top-flight football since 2016/17.
+            </p>
 
             <ol class="steps">
                 <li v-for="step in STEPS" :key="step.number" class="steps__item">
@@ -101,10 +99,14 @@ useSeoMeta({
 // Mobile-first: a single centered column that's already comfortable at phone
 // widths. The max-width caps line length and stops everything (including the
 // paragraph) stretching edge-to-edge on a desktop-width viewport, without
-// needing a breakpoint switch.
+// needing a breakpoint switch. AppHeader is a direct child here (not nested
+// inside .home__inner) so it's sized by its own max-width, not this page's —
+// see AppHeader.vue for why that matters.
 .home {
+    align-items: center;
     display: flex;
-    justify-content: center;
+    flex-direction: column;
+    gap: 1.5rem;
     min-height: 100vh;
     padding: 1.5rem 1.25rem 2rem;
 }
@@ -118,6 +120,25 @@ useSeoMeta({
     max-width: 36rem;
     text-align: center;
     width: 100%;
+}
+
+// The nav already carries the logo + "Exact XI" wordmark — repeating both
+// again here as visible content was pure duplication. This keeps the page's
+// only <h1> for accessibility/SEO structure without showing it twice.
+.home__visually-hidden-title {
+    border: 0;
+    clip-path: inset(50%);
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    padding: 0;
+    position: absolute;
+    white-space: nowrap;
+    width: 1px;
+}
+
+.home__lede {
+    margin: 0;
 }
 
 .home__icon-button {
@@ -137,17 +158,6 @@ useSeoMeta({
 .home__icon-button:hover,
 .home__icon-button:focus-visible {
     border-color: var(--color-primary);
-}
-
-.home__hero {
-    align-items: center;
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-}
-
-.home__mark {
-    display: block;
 }
 
 // A quick "how it works" strip — light visual substance beyond the headline

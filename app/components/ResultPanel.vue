@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ResultTier } from '../../shared/types';
 import { trackEvent } from '../utils/analytics';
-import { describeSlotRole } from '../utils/formations';
+import { getSlotShortLabel } from '../utils/formations';
 import { getDistance } from '../utils/scoring';
 
 type Tone = 'win' | ResultTier | 'bust';
@@ -28,7 +28,7 @@ const TIER_COPY: Record<ResultTier, { label: string; detail: (distance: number, 
     },
     midTable: {
         label: 'Mid-table',
-        detail: (distance, target) => `${distance} off ${target} — solidly mid-table.`,
+        detail: (distance, target) => `${distance} off ${target} — solid mid-table.`,
     },
     avoidedRelegation: {
         label: 'Avoided relegation',
@@ -53,6 +53,20 @@ const TIER_EMOJI: Record<ResultTier, string> = {
 const { state, startGame } = useGame();
 
 const recap = computed(() => (state.value?.slots ?? []).filter((slot) => slot.player));
+
+// The teamsheet used to be one flat list where every row looked the same —
+// pulling out the top contributor as its own spotlight moment gives the
+// list a focal point, and lets the remaining rows go small and quiet
+// instead of repeating the same layout eleven times.
+const starSlot = computed(() => {
+    if (recap.value.length === 0) {
+        return null;
+    }
+
+    return recap.value.reduce((best, slot) => (statTotal(slot.player!) > statTotal(best.player!) ? slot : best));
+});
+
+const otherSlots = computed(() => recap.value.filter((slot) => slot.id !== starSlot.value?.id));
 
 // Visually hidden but always present (not inside the v-if'd section below)
 // so screen readers pick up its text change reliably — an element that
@@ -175,6 +189,13 @@ function statCaption(player: { goals: number; assists: number }): string {
     return `${player.goals} ${goalWord} · ${player.assists} ${assistWord}`;
 }
 
+// The compact teamsheet rows only have room for a glance, not full words —
+// this sits inline right before the tally, unlike statCaption's spelled-out
+// form in the star man spotlight above, which has the space for it.
+function compactStatCaption(player: { goals: number; assists: number }): string {
+    return `${player.goals}g · ${player.assists}a`;
+}
+
 // D2's hidden-stats rule only applies while a game is in progress — this
 // component only ever renders once `status` has left 'playing' (see
 // app/pages/play.vue), so showing goals/assists openly here is correct, not
@@ -202,17 +223,6 @@ function statCaption(player: { goals: number; assists: number }): string {
             </div>
         </dl>
 
-        <ol class="result-panel__recap">
-            <li v-for="slot in recap" :key="slot.id" class="result-panel__recap-item">
-                <span class="result-panel__recap-role">{{ describeSlotRole(slot.group, slot.side, slot.rowSize) }}</span>
-                <span class="result-panel__recap-name">{{ slot.player?.name }}</span>
-                <span class="result-panel__recap-score">
-                    <span class="result-panel__recap-total">{{ statTotal(slot.player!) }}</span>
-                    <span class="result-panel__recap-caption">{{ statCaption(slot.player!) }}</span>
-                </span>
-            </li>
-        </ol>
-
         <div class="result-panel__actions">
             <button class="result-panel__action result-panel__action--primary" type="button" @click="handlePlayAgain">
                 Play again
@@ -226,6 +236,29 @@ function statCaption(player: { goals: number; assists: number }): string {
                 {{ copied ? 'Copied!' : 'Copy' }}
             </button>
         </div>
+
+        <div v-if="starSlot" class="result-panel__starman">
+            <svg aria-hidden="true" class="result-panel__starman-icon" fill="currentColor" height="28" viewBox="0 0 24 24" width="28">
+                <path d="M12 2l2.9 6.6L22 9.3l-5 4.8 1.3 7L12 17.8 5.7 21l1.3-7-5-4.8 7.1-0.7z" />
+            </svg>
+            <div class="result-panel__starman-info">
+                <p class="result-panel__starman-label">
+                    Star man · {{ getSlotShortLabel(starSlot.group, starSlot.side, starSlot.rowSize) }}
+                </p>
+                <p class="result-panel__starman-name">{{ starSlot.player?.name }}</p>
+                <p class="result-panel__starman-caption">{{ statCaption(starSlot.player!) }}</p>
+            </div>
+            <span class="result-panel__starman-total">{{ statTotal(starSlot.player!) }}</span>
+        </div>
+
+        <ol class="result-panel__recap">
+            <li v-for="slot in otherSlots" :key="slot.id" class="result-panel__recap-item">
+                <span class="result-panel__recap-role">{{ getSlotShortLabel(slot.group, slot.side, slot.rowSize) }}</span>
+                <span class="result-panel__recap-name">{{ slot.player?.name }}</span>
+                <span class="result-panel__recap-caption">{{ compactStatCaption(slot.player!) }}</span>
+                <span class="result-panel__recap-total">{{ statTotal(slot.player!) }}</span>
+            </li>
+        </ol>
     </section>
 </template>
 
@@ -347,52 +380,120 @@ function statCaption(player: { goals: number; assists: number }): string {
     margin: 0;
 }
 
-.result-panel__recap {
-    border-top: 1px solid color-mix(in srgb, var(--color-foreground) 12%, transparent);
+// Pulled out of the flat list below as its own moment — the same
+// primary/foreground/danger tokens the rest of the panel already uses, so
+// it reads correctly in both themes rather than a fixed color baked in for
+// one of them.
+.result-panel__starman {
+    align-items: center;
+    background: linear-gradient(
+        135deg,
+        color-mix(in srgb, var(--color-primary) 16%, transparent),
+        color-mix(in srgb, var(--color-primary) 3%, transparent)
+    );
+    border: 1px solid color-mix(in srgb, var(--color-primary) 35%, transparent);
+    border-radius: 0.75rem;
     display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    list-style: none;
+    gap: 0.875rem;
+    padding: 0.875rem 1rem;
+}
+
+.result-panel__starman-icon {
+    color: var(--color-primary);
+    flex-shrink: 0;
+}
+
+.result-panel__starman-info {
+    flex-grow: 1;
+    min-width: 0;
+}
+
+.result-panel__starman-label {
+    color: var(--color-primary);
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
     margin: 0;
-    padding: 1rem 0 0;
-}
-
-.result-panel__recap-item {
-    display: grid;
-    gap: 0.15rem 0.75rem;
-    grid-template-columns: 1fr auto;
-}
-
-.result-panel__recap-role {
-    color: color-mix(in srgb, var(--color-foreground) 70%, transparent);
-    font-size: 0.7rem;
-    grid-column: 1 / -1;
-    letter-spacing: 0.05em;
     text-transform: uppercase;
 }
 
-.result-panel__recap-name {
-    font-weight: 600;
+.result-panel__starman-name {
+    font-family: var(--font-display);
+    font-size: 1.15rem;
+    margin: 0.15rem 0 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-transform: var(--display-text-transform);
+    white-space: nowrap;
 }
 
-.result-panel__recap-score {
-    align-items: flex-end;
+.result-panel__starman-caption {
+    color: color-mix(in srgb, var(--color-foreground) 70%, transparent);
+    font-size: 0.75rem;
+    margin: 0.15rem 0 0;
+}
+
+.result-panel__starman-total {
+    color: var(--color-primary);
+    flex-shrink: 0;
+    font-family: var(--font-display);
+    font-size: 1.75rem;
+    font-variant-numeric: tabular-nums;
+}
+
+// The rest of the XI: one line each, quiet next to the spotlight above —
+// role as a small pill instead of its own uppercase line, and the g/a
+// breakdown compact right before the tally instead of stacked under it.
+.result-panel__recap {
     display: flex;
     flex-direction: column;
-    gap: 0.1rem;
+    gap: 0.15rem;
+    list-style: none;
+    margin: 0;
+    padding: 0;
 }
 
-.result-panel__recap-total {
-    font-family: var(--font-display);
-    font-size: 1.1rem;
-    font-variant-numeric: tabular-nums;
+.result-panel__recap-item {
+    align-items: center;
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.3rem 0;
+}
+
+.result-panel__recap-role {
+    border: 1px solid color-mix(in srgb, var(--color-foreground) 20%, transparent);
+    border-radius: 999px;
+    color: color-mix(in srgb, var(--color-foreground) 70%, transparent);
+    flex-shrink: 0;
+    font-size: 0.65rem;
     font-weight: 700;
+    letter-spacing: 0.04em;
+    padding: 0.1rem 0.45rem;
+}
+
+.result-panel__recap-name {
+    flex-grow: 1;
+    font-size: 0.85rem;
+    font-weight: 600;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .result-panel__recap-caption {
-    color: color-mix(in srgb, var(--color-foreground) 70%, transparent);
-    font-size: 0.7rem;
+    color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
+    flex-shrink: 0;
+    font-size: 0.68rem;
     white-space: nowrap;
+}
+
+.result-panel__recap-total {
+    flex-shrink: 0;
+    font-family: var(--font-display);
+    font-size: 0.9rem;
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
 }
 
 .result-panel__actions {

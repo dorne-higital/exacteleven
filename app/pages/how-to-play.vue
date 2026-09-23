@@ -14,15 +14,15 @@ useSeoMeta({
 
 <template>
     <main class="how-to-play">
-        <div class="how-to-play__inner">
-            <AppHeader>
-                <NuxtLink class="how-to-play__back" to="/">
-                    <AppIcon name="back" />
-                    Home
-                </NuxtLink>
-                <ThemeToggle />
-            </AppHeader>
+        <AppHeader>
+            <NuxtLink class="how-to-play__back" to="/">
+                <AppIcon name="back" />
+                Home
+            </NuxtLink>
+            <ThemeToggle />
+        </AppHeader>
 
+        <div class="how-to-play__inner">
             <h1>How to play</h1>
 
             <HowToPlayContent />
@@ -31,9 +31,14 @@ useSeoMeta({
 </template>
 
 <style lang="scss" scoped>
+// AppHeader is a direct child here (not nested inside .how-to-play__inner)
+// so it's sized by its own max-width, not this page's — see AppHeader.vue
+// for why that matters.
 .how-to-play {
+    align-items: center;
     display: flex;
-    justify-content: center;
+    flex-direction: column;
+    gap: 1.25rem;
     min-height: 100vh;
     padding: 1.5rem 1.25rem;
 }

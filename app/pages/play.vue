@@ -66,21 +66,21 @@ useSeoMeta({
 
 <template>
     <main class="play">
-        <div class="play__inner">
-            <AppHeader>
-                <NuxtLink aria-label="Back to formation picker" class="play__back" to="/">
-                    <AppIcon name="back" />
-                    Formations
-                </NuxtLink>
-                <button aria-label="How to play" class="play__info-button" type="button" @click="openInfo">
-                    <AppIcon name="info" />
-                </button>
-                <button aria-label="Your stats" class="play__info-button" type="button" @click="openStats">
-                    <AppIcon name="stats" />
-                </button>
-                <ThemeToggle />
-            </AppHeader>
+        <AppHeader>
+            <NuxtLink v-if="!gameOver" aria-label="Back to formation picker" class="play__back" to="/">
+                <AppIcon name="back" />
+                Formations
+            </NuxtLink>
+            <button aria-label="How to play" class="play__info-button" type="button" @click="openInfo">
+                <AppIcon name="info" />
+            </button>
+            <button aria-label="Your stats" class="play__info-button" type="button" @click="openStats">
+                <AppIcon name="stats" />
+            </button>
+            <ThemeToggle />
+        </AppHeader>
 
+        <div class="play__inner">
             <template v-if="formation && state">
                 <h1 class="play__title">{{ formation.code }} formation</h1>
 
@@ -129,9 +129,14 @@ useSeoMeta({
 // Mobile-first single column. On a desktop-width viewport, .play__inner caps
 // out at a comfortable portrait-card width and centers itself, rather than
 // letting the title/scorebar/board spread apart across the full viewport.
+// AppHeader is a direct child here (not nested inside .play__inner) so it's
+// sized by its own max-width, not this page's narrower one — see
+// AppHeader.vue for why that matters.
 .play {
+    align-items: center;
     display: flex;
-    justify-content: center;
+    flex-direction: column;
+    gap: 1.25rem;
     min-height: 100vh;
     padding: 1.5rem 1.25rem;
 }
