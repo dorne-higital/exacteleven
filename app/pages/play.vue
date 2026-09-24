@@ -67,10 +67,6 @@ useSeoMeta({
 <template>
     <main class="play">
         <AppHeader>
-            <NuxtLink v-if="!gameOver" aria-label="Back to formation picker" class="play__back" to="/">
-                <AppIcon name="back" />
-                Formations
-            </NuxtLink>
             <button aria-label="How to play" class="play__info-button" type="button" @click="openInfo">
                 <AppIcon name="info" />
             </button>
@@ -148,22 +144,6 @@ useSeoMeta({
     gap: 1.25rem;
     max-width: 26rem;
     width: 100%;
-}
-
-.play__back {
-    align-items: center;
-    color: inherit;
-    display: flex;
-    font-size: 0.85rem;
-    font-weight: 600;
-    gap: 0.4rem;
-    margin-right: auto;
-    text-decoration: none;
-}
-
-.play__back:hover,
-.play__back:focus-visible {
-    color: var(--color-primary);
 }
 
 .play__info-button {

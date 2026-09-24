@@ -1,27 +1,8 @@
 import type { FormationCode, GameStatus, ResultTier } from '../../shared/types';
+import type { BestResult, GameStats } from '../utils/stats-types';
 import type { Outcome } from '../utils/scoring';
 import { formations } from '../utils/formations';
 import { isBetterOutcome } from '../utils/scoring';
-
-export interface BestResult {
-    outcome: Outcome;
-    formationCode: FormationCode;
-}
-
-export interface GameStats {
-    gamesPlayed: number;
-    wins: number;
-    championsLeague: number;
-    europaLeague: number;
-    midTable: number;
-    avoidedRelegation: number;
-    relegated: number;
-    busts: number;
-    /** The best outcome ever reached (bust doesn't count — it isn't part of the ranked ladder), and which formation it happened on. */
-    bestResult: BestResult | null;
-    /** How many completed games were played on each formation — same "once per terminal game" recording as everything else here. */
-    formationPlays: Record<FormationCode, number>;
-}
 
 const STATS_STORAGE_KEY = 'exact-xi-stats';
 
@@ -63,6 +44,14 @@ function sanitizeStats(parsed: unknown): Partial<GameStats> {
         ) as Record<FormationCode, number>;
     }
 
+    if (typeof raw.formationWins === 'object' && raw.formationWins !== null) {
+        const rawWins = raw.formationWins as Record<string, unknown>;
+
+        clean.formationWins = Object.fromEntries(
+            Object.entries(rawWins).filter(([code, count]) => formationCodes.has(code as FormationCode) && isNonNegativeInt(count)),
+        ) as Record<FormationCode, number>;
+    }
+
     if (
         typeof raw.bestResult === 'object'
         && raw.bestResult !== null
@@ -77,7 +66,7 @@ function sanitizeStats(parsed: unknown): Partial<GameStats> {
     return clean;
 }
 
-function emptyFormationPlays(): Record<FormationCode, number> {
+function emptyFormationRecord(): Record<FormationCode, number> {
     return Object.fromEntries(formations.map((formation) => [formation.code, 0])) as Record<FormationCode, number>;
 }
 
@@ -92,7 +81,8 @@ function emptyStats(): GameStats {
         relegated: 0,
         busts: 0,
         bestResult: null,
-        formationPlays: emptyFormationPlays(),
+        formationPlays: emptyFormationRecord(),
+        formationWins: emptyFormationRecord(),
     };
 }
 
@@ -109,7 +99,8 @@ function readStoredStats(): GameStats {
         return {
             ...emptyStats(),
             ...parsed,
-            formationPlays: { ...emptyFormationPlays(), ...parsed.formationPlays },
+            formationPlays: { ...emptyFormationRecord(), ...parsed.formationPlays },
+            formationWins: { ...emptyFormationRecord(), ...parsed.formationWins },
         };
     } catch {
         // Private-mode/blocked storage, or corrupt JSON — start fresh for
@@ -154,6 +145,10 @@ export function useStats() {
 
         if (status === 'won') {
             next.wins += 1;
+            next.formationWins = {
+                ...stats.value.formationWins,
+                [formationCode]: stats.value.formationWins[formationCode] + 1,
+            };
             outcome = 'champion';
         } else if (status === 'bust') {
             next.busts += 1;
