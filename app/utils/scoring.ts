@@ -28,15 +28,16 @@ export function getDistance(total: number, target: number): number {
 // (±20) because the win condition is exact-only now — "finished" covers the
 // entire rest of the outcome space, not just a narrow near-miss band.
 //
-// Mapped onto that real distribution (rounded to clean numbers):
-//   championsLeague  <= 35   (~p10)  — the closest ~10%, a genuine near-miss
-//   europaLeague     <= 85   (~p25)  — next ~15%
-//   midTable         <= 200  (~p58)  — next ~33%, the largest single band —
-//                                      "unremarkable middling finish" is
-//                                      supposed to be the common case
-//   avoidedRelegation <= 350 (~p90)  — next ~32%
-//   relegated       otherwise        — the worst ~10%, reserved for finishes
-//                                      further out than 90% of all finishes
+// Mapped onto that real distribution, then tightened below the raw
+// percentiles (rounded to clean numbers) so the top tiers stay a genuine
+// reach rather than a near-default outcome:
+//   championsLeague  <= 25   (< p10)  — a genuine near-miss
+//   europaLeague     <= 75   (< p25)  — next band
+//   midTable         <= 150  (< p40)  — next band; still the most common
+//                                       "unremarkable middling finish"
+//   avoidedRelegation <= 300 (< p90)  — next band
+//   relegated       otherwise         — the worst ~10%, reserved for finishes
+//                                       further out than 90% of all finishes
 const TIER_BOUNDARIES: ReadonlyArray<{ tier: ResultTier; maxDistance: number }> = [
     { tier: 'championsLeague', maxDistance: 25 },
     { tier: 'europaLeague', maxDistance: 75 },

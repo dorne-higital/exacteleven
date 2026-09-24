@@ -43,33 +43,33 @@ describe('getDistance', () => {
 });
 
 // Boundaries chosen empirically from scripts/simulate.ts's distance
-// distribution (see the comment in scoring.ts for the full percentile
-// data): championsLeague <= 35, europaLeague <= 85, midTable <= 200,
-// avoidedRelegation <= 350, relegated otherwise.
+// distribution, then tightened (see the comment in scoring.ts for the full
+// rationale): championsLeague <= 25, europaLeague <= 75, midTable <= 150,
+// avoidedRelegation <= 300, relegated otherwise.
 describe('tierForDistance', () => {
     it('is championsLeague at and just under its boundary', () => {
         expect(tierForDistance(0)).toBe('championsLeague');
         expect(tierForDistance(1)).toBe('championsLeague');
-        expect(tierForDistance(35)).toBe('championsLeague');
+        expect(tierForDistance(25)).toBe('championsLeague');
     });
 
     it('crosses from championsLeague to europaLeague at the boundary', () => {
-        expect(tierForDistance(36)).toBe('europaLeague');
-        expect(tierForDistance(85)).toBe('europaLeague');
+        expect(tierForDistance(26)).toBe('europaLeague');
+        expect(tierForDistance(75)).toBe('europaLeague');
     });
 
     it('crosses from europaLeague to midTable at the boundary', () => {
-        expect(tierForDistance(86)).toBe('midTable');
-        expect(tierForDistance(200)).toBe('midTable');
+        expect(tierForDistance(76)).toBe('midTable');
+        expect(tierForDistance(150)).toBe('midTable');
     });
 
     it('crosses from midTable to avoidedRelegation at the boundary', () => {
-        expect(tierForDistance(201)).toBe('avoidedRelegation');
-        expect(tierForDistance(350)).toBe('avoidedRelegation');
+        expect(tierForDistance(151)).toBe('avoidedRelegation');
+        expect(tierForDistance(300)).toBe('avoidedRelegation');
     });
 
     it('crosses from avoidedRelegation to relegated at the boundary', () => {
-        expect(tierForDistance(351)).toBe('relegated');
+        expect(tierForDistance(301)).toBe('relegated');
     });
 
     it('stays relegated arbitrarily far out', () => {
@@ -93,19 +93,19 @@ describe('getGameResult', () => {
 
     it('is finished with the championsLeague tier just short of exact', () => {
         expect(getGameResult(441, 442, 11, 11)).toEqual({ status: 'finished', tier: 'championsLeague' });
-        expect(getGameResult(407, 442, 11, 11)).toEqual({ status: 'finished', tier: 'championsLeague' });
+        expect(getGameResult(417, 442, 11, 11)).toEqual({ status: 'finished', tier: 'championsLeague' });
     });
 
     it('is finished with the europaLeague tier a bit further out', () => {
-        expect(getGameResult(357, 442, 11, 11)).toEqual({ status: 'finished', tier: 'europaLeague' });
+        expect(getGameResult(390, 442, 11, 11)).toEqual({ status: 'finished', tier: 'europaLeague' });
     });
 
     it('is finished with the midTable tier further still', () => {
-        expect(getGameResult(242, 442, 11, 11)).toEqual({ status: 'finished', tier: 'midTable' });
+        expect(getGameResult(310, 442, 11, 11)).toEqual({ status: 'finished', tier: 'midTable' });
     });
 
     it('is finished with the avoidedRelegation tier further still', () => {
-        expect(getGameResult(92, 442, 11, 11)).toEqual({ status: 'finished', tier: 'avoidedRelegation' });
+        expect(getGameResult(200, 442, 11, 11)).toEqual({ status: 'finished', tier: 'avoidedRelegation' });
     });
 
     it('is finished with the relegated tier for the worst finishes', () => {
