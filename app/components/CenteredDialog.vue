@@ -25,10 +25,19 @@ watch(open, (isOpen) => {
 function handleNativeClose(): void {
     open.value = false;
 }
+
+// A click that lands on the <dialog> element itself (not a descendant) means
+// it hit the backdrop area, not the content — the native way to detect a
+// click-outside on a <dialog>.
+function handleBackdropClick(event: MouseEvent): void {
+    if (event.target === dialogRef.value) {
+        open.value = false;
+    }
+}
 </script>
 
 <template>
-    <dialog ref="dialogRef" :aria-labelledby="titleId" class="centered-dialog" @close="handleNativeClose">
+    <dialog ref="dialogRef" :aria-labelledby="titleId" class="centered-dialog" @click="handleBackdropClick" @close="handleNativeClose">
         <div class="centered-dialog__header">
             <h2 :id="titleId" class="centered-dialog__title">{{ title }}</h2>
             <button aria-label="Close" class="centered-dialog__close" type="button" @click="open = false">

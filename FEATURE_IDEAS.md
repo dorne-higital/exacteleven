@@ -14,16 +14,15 @@ All ideas below assume the current architecture (client-only, stats/achievements
 
 ## Social / shareability
 
-(GTM already tracks a `share` event, so there's a hook to build on)
+(GTM now forwards every custom event — including everything below — to GA4 via one alias-matched trigger/tag; new events just need adding to that trigger's name list, no new GTM tag required.)
 
-- **Image share card** — render the result (score, star man, formation) to a canvas/PNG instead of just text; image cards get far more engagement on socials than plain text.
-- **Challenge-a-friend link** — encode the formation + target in a share URL so a friend plays the exact same puzzle and you compare results. No backend required, just URL params.
-- **Achievement unlock share** — a shareable card for the moment a badge unlocks (SVG artwork already exists).
+- **Image share card** — **Status: Shipped.** `app/utils/share-card.ts` renders the result (score, star man, formation) to a canvas/PNG, reading live theme CSS variables so the exported image matches whichever theme (Match Programme/Dugout Dark) the visitor is on. "Share image" button in `ResultPanel.vue` — native share sheet on mobile, `<a download>` fallback on desktop. Reused as-is for the achievement-unlock share below.
+- **Challenge-a-friend link** — **Status: Shipped, grew beyond the original idea.** Originally scoped as "encode formation + target in a URL so a friend beats your score" — after feedback, became a full challenge builder instead: `CreateChallengeDialog.vue` lets you pick any formation, any objective mode, and lock in up to 3 players' slots before generating a link; `/challenge` decodes and plays it back identically for whoever opens it. Same "config-is-the-seed" trick as Daily Challenge (no backend, no stored IDs — the URL's own query params are the puzzle's identity). A custom challenge's result deliberately doesn't feed classic stats or the Daily streak. Tracked end-to-end: `challenge_created` (link generated) → `challenge_link_shared` (actually sent, share vs. copy) → `challenge_link_opened` (friend lands on it) → `challenge_start`/`challenge_resume` → `challenge_over`.
+- **Achievement unlock share** — **Status: Shipped.** New non-modal toast (`AchievementToast.vue`) fires the instant a badge unlocks — deliberately not another `CenteredDialog`, so it never stacks on top of the pick-reveal dialog at the exact moment a game-winning pick also unlocks a badge. Has its own Share button using the same canvas renderer as the image share card above. One-time silent backfill on load so an existing player doesn't get flooded with toasts for badges they already had before this shipped.
 
 ## Feel / character
 
-- **Sound effects** — light audio cues on reveal/win/bust, respecting a mute toggle (same pattern as the existing `prefers-reduced-motion` handling).
-- **Reveal micro-copy** — a small bank of flavor lines for the reveal moment (cheeky text for a bust vs. a near-miss vs. an exact win), cycled randomly.
+- **Reveal micro-copy** — **Status: Shipped.** `app/utils/reveal-flavor.ts` — a small bank of flavor lines for bust / win / close-call moments, shown under the revealed number in `PlayerChoiceDialog.vue`. Unified across every objective type (`exact`/`over`/`under`/`allUnder`) via one "distance from whichever ceiling currently matters" concept, so a "close" line only fires on a genuine near-miss, not every routine pick.
 
 ## Bigger lifts (need a backend/DB)
 

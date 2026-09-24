@@ -160,7 +160,7 @@ useSeoMeta({
 
             <p v-else-if="!loading" class="challenge__error">
                 This challenge link isn't valid.
-                <NuxtLink to="/">Pick a formation</NuxtLink>
+                <NuxtLink to="/select-formation">Pick a formation</NuxtLink>
             </p>
 
             <p v-else class="challenge__error">Loading challenge…</p>

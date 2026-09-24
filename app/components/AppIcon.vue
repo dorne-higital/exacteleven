@@ -4,7 +4,7 @@
 // rather than three near-identical copies of the same markup drifting apart
 // over time.
 defineProps<{
-    name: 'back' | 'calendar' | 'close' | 'info' | 'stats' | 'target';
+    name: 'back' | 'calendar' | 'close' | 'info' | 'pitch' | 'stats' | 'target';
 }>();
 </script>
 
@@ -48,5 +48,11 @@ defineProps<{
         <circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="2" />
         <circle cx="12" cy="12" fill="currentColor" r="0.9" />
         <path d="M12 1v3M12 20v3M1 12h3M20 12h3" stroke="currentColor" stroke-linecap="round" stroke-width="2" />
+    </svg>
+
+    <svg v-else-if="name === 'pitch'" aria-hidden="true" fill="none" height="20" viewBox="0 0 24 24" width="20">
+        <rect height="18" rx="1" stroke="currentColor" stroke-width="2" width="14" x="5" y="3" />
+        <path d="M5 12h14" stroke="currentColor" stroke-linecap="round" stroke-width="2" />
+        <circle cx="12" cy="12" r="2.75" stroke="currentColor" stroke-width="2" />
     </svg>
 </template>

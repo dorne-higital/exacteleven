@@ -292,10 +292,20 @@ async function handleReroll(): Promise<void> {
 function handleNativeClose(): void {
     closeDialog();
 }
+
+// A click that lands on the <dialog> element itself (not a descendant) means
+// it hit the backdrop area, not the content — the native way to detect a
+// click-outside on a <dialog>. Same discard-the-offer behavior Escape
+// already triggers via handleNativeClose above.
+function handleBackdropClick(event: MouseEvent): void {
+    if (event.target === dialogRef.value) {
+        dialogRef.value?.close();
+    }
+}
 </script>
 
 <template>
-    <dialog ref="dialogRef" :aria-labelledby="titleId" class="player-choice" @close="handleNativeClose">
+    <dialog ref="dialogRef" :aria-labelledby="titleId" class="player-choice" @click="handleBackdropClick" @close="handleNativeClose">
         <div aria-hidden="true" class="player-choice__handle" />
 
         <h2 :id="titleId" class="player-choice__title">Pick a player</h2>

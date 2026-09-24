@@ -15,6 +15,7 @@
     "lint": "eslint .",
     "lint:style": "stylelint \"**/*.{css,scss,vue}\"",
     "seed:players": "tsx scripts/seed-players.ts",
+    "seed:players:refresh": "tsx scripts/seed-players.ts --fresh",
     "sim:balance": "tsx scripts/simulate.ts",
     "test": "vitest run",
     "typecheck": "nuxt typecheck && tsc --noEmit -p tsconfig.scripts.json"

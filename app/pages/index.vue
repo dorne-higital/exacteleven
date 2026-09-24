@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { trackEvent } from '../utils/analytics';
-import { FORMATION_DIFFICULTY, formations } from '../utils/formations';
 
 const STEPS = [
     { number: '1', title: 'Pick a formation', detail: 'Its digits become your target.' },
@@ -21,8 +20,8 @@ function openStats(): void {
     trackEvent('view_stats', { source: 'home' });
 }
 
-function selectFormation(formationCode: string): void {
-    trackEvent('select_formation', { formation: formationCode });
+function selectPlay(): void {
+    trackEvent('view_formation_picker', { source: 'home' });
 }
 
 function selectDaily(): void {
@@ -80,6 +79,15 @@ useSeoMeta({
                 </li>
             </ol>
 
+            <NuxtLink class="daily-card daily-card--play" to="/select-formation" @click="selectPlay">
+                <AppIcon class="daily-card__bleed-icon" name="pitch" />
+                <AppIcon class="daily-card__icon" name="pitch" />
+                <span class="daily-card__details">
+                    <span class="daily-card__title">Play game</span>
+                    <span class="daily-card__detail">Pick a formation and fill the XI.</span>
+                </span>
+            </NuxtLink>
+
             <div class="entry-cards">
                 <NuxtLink class="daily-card" to="/daily" @click="selectDaily">
                     <AppIcon class="daily-card__bleed-icon" name="calendar" />
@@ -99,26 +107,6 @@ useSeoMeta({
                     </span>
                 </button>
             </div>
-
-            <ul class="formations">
-                <li v-for="formation in formations" :key="formation.code">
-                    <NuxtLink
-                        class="formations__link"
-                        :class="`formations__link--${FORMATION_DIFFICULTY[formation.code].tier}`"
-                        :to="{ path: '/play', query: { f: formation.code } }"
-                        @click="selectFormation(formation.code)"
-                    >
-                        <FormationIcon :slots="formation.slots" />
-                        <span class="formations__details">
-                            <span class="formations__code">{{ formation.code }}</span>
-                            <span class="formations__rows">{{ formation.rows[0] }} DEF · {{ formation.rows[1] }} MID · {{ formation.rows[2] }} FWD</span>
-                        </span>
-                        <span class="formations__tag" :class="`formations__tag--${FORMATION_DIFFICULTY[formation.code].tier}`">
-                            {{ FORMATION_DIFFICULTY[formation.code].label }}
-                        </span>
-                    </NuxtLink>
-                </li>
-            </ul>
         </div>
 
         <InfoDialog v-model:open="infoOpen" />
@@ -193,7 +181,7 @@ useSeoMeta({
 }
 
 // A quick "how it works" strip — light visual substance beyond the headline
-// paragraph, without competing with the formation list below it.
+// paragraph, without competing with the entry cards below it.
 .steps {
     display: flex;
     gap: 0.75rem;
@@ -234,8 +222,8 @@ useSeoMeta({
 }
 
 // Two equal-width entry points side by side, rather than stacked — they're
-// peers (both "start a game some other way than the formation list"), so a
-// 50/50 row reads that relationship better than two full-width rows.
+// peers (both secondary to the main "Play game" entry above), so a 50/50 row
+// reads that relationship better than two full-width rows.
 .entry-cards {
     display: flex;
     gap: 0.625rem;
@@ -243,13 +231,11 @@ useSeoMeta({
     width: 100%;
 }
 
-// A distinct entry point from the formation list below — solid primary
-// border (not the neutral one every formations__link starts with) so it
-// reads as "the featured one", not just another row in the same list.
-// Column layout (icon/title/detail stacked, centered) rather than the old
-// icon-beside-text row — reads better at half width. position: relative +
-// overflow: hidden gives .daily-card__bleed-icon a corner to bleed off of
-// without spilling into the row's gap or the neighbouring card.
+// Shared shell for every home-page entry card, including the full-width
+// "Play game" one above .entry-cards. Column layout (icon/title/detail
+// stacked, centered) reads well at both full and half width. position:
+// relative + overflow: hidden gives .daily-card__bleed-icon a corner to
+// bleed off of without spilling into the row's gap or the neighbouring card.
 .daily-card {
     align-items: center;
     background-color: color-mix(in srgb, var(--color-primary) 10%, transparent);
@@ -273,6 +259,23 @@ useSeoMeta({
 .daily-card--challenge {
     cursor: pointer;
     font: inherit;
+}
+
+// The featured entry point — full width and on its own row above the 50/50
+// Daily/Challenge pair, so the main game reads as a peer of "how to play"
+// rather than buried below the formation list the way it used to be. Sits
+// directly in .home__inner (a column flex container) rather than inside
+// .entry-cards (a row), so .daily-card's flex: 1 1 0 would otherwise zero
+// out this card's height instead of its width — reset back to content-sized
+// here and size explicitly via width/max-width instead. box-sizing: border-box
+// so that explicit width includes the card's own padding/border rather than
+// adding them on top — .entry-cards' children get this for free from flex's
+// own sizing math, but this one needs it stated to line up with them.
+.daily-card--play {
+    box-sizing: border-box;
+    flex: none;
+    max-width: 26rem;
+    width: 100%;
 }
 
 // The rust/danger accent (vs. Daily's primary green) is what makes the two
@@ -327,96 +330,5 @@ useSeoMeta({
     font-size: 0.7rem;
     line-height: 1.3;
     margin-top: 0.2rem;
-}
-
-// Single-column stacked list — the direction chosen off the design canvas —
-// not a card grid: each formation is a full-width row so it reads the same
-// way (one after another) at every viewport width, not fewer/more per row.
-.formations {
-    display: flex;
-    flex-direction: column;
-    gap: 0.625rem;
-    list-style: none;
-    margin: 0;
-    max-width: 26rem;
-    padding: 0;
-    width: 100%;
-}
-
-.formations__link {
-    align-items: center;
-    background-color: color-mix(in srgb, var(--color-foreground) 6%, transparent);
-    border: 1px solid color-mix(in srgb, var(--color-foreground) 15%, transparent);
-    border-left: 4px solid color-mix(in srgb, var(--color-foreground) 15%, transparent);
-    border-radius: 0.75rem;
-    color: inherit;
-    display: flex;
-    gap: 0.875rem;
-    padding: 0.75rem 1rem;
-    text-align: left;
-    text-decoration: none;
-    transition: border-color 0.15s ease;
-}
-
-.formations__link:hover,
-.formations__link:focus-visible {
-    border-color: var(--color-primary);
-}
-
-.formations__link--easier {
-    border-left-color: var(--color-primary);
-}
-
-.formations__link--hardest {
-    border-left-color: var(--color-danger);
-}
-
-.formations__details {
-    display: flex;
-    flex-direction: column;
-    flex-grow: 1;
-    min-width: 0;
-}
-
-.formations__code {
-    font-family: var(--font-display);
-    font-size: 1.25rem;
-    font-weight: 700;
-    line-height: 1;
-}
-
-.formations__rows {
-    color: color-mix(in srgb, var(--color-foreground) 70%, transparent);
-    font-size: 0.75rem;
-    margin-top: 0.25rem;
-}
-
-.formations__tag {
-    border: 1px solid currentcolor;
-    border-radius: 999px;
-    flex-shrink: 0;
-    font-family: var(--font-display);
-    font-size: 0.65rem;
-    letter-spacing: 0.06em;
-    padding: 0.25rem 0.6rem;
-    text-transform: uppercase;
-}
-
-.formations__tag--easier {
-    color: var(--color-primary);
-}
-
-.formations__tag--balanced {
-    color: color-mix(in srgb, var(--color-foreground) 65%, transparent);
-}
-
-.formations__tag--hardest {
-    color: var(--color-danger);
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .formations__link {
-        transition: none;
-    }
 }
 </style>

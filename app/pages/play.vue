@@ -112,7 +112,7 @@ useSeoMeta({
             <p v-else class="play__error">
                 <template v-if="formationCode">"{{ formationCode }}" isn't a valid formation.</template>
                 <template v-else>No formation selected.</template>
-                <NuxtLink to="/">Pick a formation</NuxtLink>
+                <NuxtLink to="/select-formation">Pick a formation</NuxtLink>
             </p>
         </div>
 
