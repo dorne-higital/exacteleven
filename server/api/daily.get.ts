@@ -1,4 +1,4 @@
-import { getDailyFormationCode, getDailyObjective, getDailyPrefilledSlotIds } from '../../shared/daily';
+import { getDailyFormationCode, getDailyObjective, getDailyPrefilledSlotIds } from '#shared/daily';
 import { getFormation } from '../../app/utils/formations';
 import { assignPrefilledPlayers } from '../utils/assign-prefilled';
 

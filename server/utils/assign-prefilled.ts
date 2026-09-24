@@ -1,5 +1,5 @@
 import type { Formation, Player } from '../../shared/types';
-import { pickDeterministicItem } from '../../shared/daily';
+import { pickDeterministicItem } from '#shared/daily';
 import { getPlayersByPosition } from './players';
 
 export interface PrefilledSlot {

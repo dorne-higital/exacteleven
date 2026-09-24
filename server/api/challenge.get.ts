@@ -1,5 +1,5 @@
 import type { ObjectiveKind } from '../../shared/types';
-import { buildObjective, OBJECTIVE_KINDS } from '../../shared/daily';
+import { buildObjective, OBJECTIVE_KINDS } from '#shared/daily';
 import { getFormation } from '../../app/utils/formations';
 import { assignPrefilledPlayers } from '../utils/assign-prefilled';
 

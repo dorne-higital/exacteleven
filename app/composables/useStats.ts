@@ -2,7 +2,7 @@ import type { FormationCode, GameStatus, ResultTier } from '../../shared/types';
 import type { AchievementDef } from '../utils/achievements';
 import type { BestResult, GameStats } from '../utils/stats-types';
 import type { Outcome } from '../utils/scoring';
-import { dayIndexForDate } from '../../shared/daily';
+import { dayIndexForDate } from '#shared/daily';
 import { backfillSeenAchievements, diffNewlyUnlocked, readSeenAchievementIds, writeSeenAchievementIds } from '../utils/achievement-notifications';
 import { formations } from '../utils/formations';
 import { isBetterOutcome } from '../utils/scoring';

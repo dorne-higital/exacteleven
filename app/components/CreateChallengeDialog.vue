@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ChallengePayload } from '../composables/useGame';
 import type { FormationCode, ObjectiveKind } from '../../shared/types';
-import { objectiveValueOptions } from '../../shared/daily';
+import { objectiveValueOptions } from '#shared/daily';
 import { trackEvent } from '../utils/analytics';
 import { buildChallengeQuery } from '../utils/challenge-config';
 import { formations, getSlotShortLabel } from '../utils/formations';
