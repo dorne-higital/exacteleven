@@ -1,9 +1,0 @@
-//#region app/components/PositionSlot.vue?vue&type=style&index=0&scoped=f5bf9689&inline&used&lang.scss
-var PositionSlot_vue_vue_type_style_index_0_scoped_f5bf9689_inline_used_lang_default = ".position-slot[data-v-f5bf9689]{background-color:var(--slot-empty-bg);border:1.5px dashed var(--slot-empty-border);color:var(--slot-empty-text);cursor:pointer;font:inherit;text-align:center;border-radius:.625rem;flex-direction:column;justify-content:center;align-items:center;gap:.05rem;min-width:3.5rem;max-width:5rem;min-height:2.75rem;padding:.35rem .45rem;font-weight:700;display:flex;position:absolute;transform:translate(-50%,-50%)}.position-slot[data-v-f5bf9689]:disabled{cursor:default}.position-slot--filled[data-v-f5bf9689]{background-color:var(--color-surface);border:1.5px solid var(--color-primary);color:var(--slot-filled-text)}.position-slot--tight[data-v-f5bf9689]{max-width:3.5rem}.position-slot--ended[data-v-f5bf9689]{opacity:.45}@keyframes position-slot-loading-pulse-f5bf9689{0%,to{opacity:1}50%{opacity:.5}}.position-slot--loading[data-v-f5bf9689]{animation:.9s ease-in-out infinite position-slot-loading-pulse-f5bf9689}@media (prefers-reduced-motion:reduce){.position-slot--loading[data-v-f5bf9689]{opacity:.6;animation:none}}.position-slot__group[data-v-f5bf9689]{letter-spacing:.03em;font-size:.7rem}.position-slot__total[data-v-f5bf9689]{font-family:var(--font-display);font-size:1.05rem;line-height:1}.position-slot__name[data-v-f5bf9689]{text-overflow:ellipsis;white-space:nowrap;padding:0 .15rem;font-size:.55rem;font-weight:600;line-height:1.1;overflow:hidden}.position-slot__preset[data-v-f5bf9689]{color:var(--color-primary);font-size:.6rem;line-height:1;position:absolute;top:.25rem;right:.3rem}";
-
-const PositionSlotStyles_Cs4TJt7 = [
-  PositionSlot_vue_vue_type_style_index_0_scoped_f5bf9689_inline_used_lang_default
-];
-
-export { PositionSlotStyles_Cs4TJt7 as default };
-//# sourceMappingURL=PositionSlot-styles.Cs4-TJt7.mjs.map
