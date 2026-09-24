@@ -55,8 +55,16 @@ async function loadChallenge(): Promise<void> {
 }
 
 // Client-only, same reasoning as daily.vue: a network fetch for real player
-// data isn't meaningful during SSR.
+// data isn't meaningful during SSR. Tracked separately from useGame's
+// challenge_start/challenge_resume (which only fire once the game state
+// actually resolves) so a visit to a link with a malformed/expired config
+// still counts as an "open" — this is the number the creator actually wants
+// when asking "did anyone open my link".
 onMounted(() => {
+    if (challengeQuery.value.f) {
+        trackEvent('challenge_link_opened', { formation: challengeQuery.value.f, mode: challengeQuery.value.mode ?? 'exact' });
+    }
+
     loadChallenge();
 });
 

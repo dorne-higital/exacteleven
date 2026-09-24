@@ -92,10 +92,24 @@ function handleStartOver(): void {
 const copyLabel = ref('Copy link');
 let copyLabelTimeout: number | undefined;
 
+// The "was this link actually handed to anyone" signal — challenge_created
+// (above) only means a preview was generated, which can be abandoned without
+// ever reaching a friend. This is the count that answers "how many links are
+// being made" in the sense that matters.
+function trackLinkShared(method: 'share' | 'copy'): void {
+    trackEvent('challenge_link_shared', {
+        formation: formationCode.value,
+        mode: mode.value,
+        method,
+        presetCount: presetSlotIds.value.length,
+    });
+}
+
 async function handleShareOrCopy(): Promise<void> {
     if (navigator.share) {
         try {
             await navigator.share({ title: 'Exact XI', text: 'A board I set up for you on Exact XI.', url: challengeUrl.value });
+            trackLinkShared('share');
 
             return;
         } catch {
@@ -115,6 +129,7 @@ async function handleShareOrCopy(): Promise<void> {
         copyLabelTimeout = window.setTimeout(() => {
             copyLabel.value = 'Copy link';
         }, 2000);
+        trackLinkShared('copy');
     } catch {
         // Optional convenience — fail silently, same as every other share action in this app.
     }
