@@ -2,7 +2,7 @@ import type { FormationCode, ResultTier } from '../../shared/types';
 import type { GameStats } from './stats-types';
 import { formations } from './formations';
 
-export type AchievementCategory = 'gamesPlayed' | 'gamesWon' | 'tier' | 'formationWin';
+export type AchievementCategory = 'gamesPlayed' | 'gamesWon' | 'tier' | 'formationWin' | 'dailyStreak';
 export type AchievementRank = 'bronze' | 'silver' | 'gold' | 'emerald' | 'diamond';
 
 export interface AchievementDef {
@@ -27,6 +27,7 @@ export interface AchievementProgress {
 // needing its own bespoke numbers.
 const GAMES_PLAYED_THRESHOLDS = [5, 10, 25, 50, 100, 250, 500, 1000, 5000, 10000];
 const WIN_THRESHOLDS = [1, 3, 5, 10, 25, 50, 100, 250, 500];
+const DAILY_STREAK_THRESHOLDS = [3, 7, 14, 30, 60, 100, 365];
 
 export const TIERS: ReadonlyArray<{ key: ResultTier; label: string }> = [
     { key: 'championsLeague', label: 'Champions League' },
@@ -105,6 +106,17 @@ function buildAchievements(): AchievementDef[] {
         });
     }
 
+    DAILY_STREAK_THRESHOLDS.forEach((threshold, index) => {
+        defs.push({
+            id: `daily-streak-${threshold}`,
+            category: 'dailyStreak',
+            threshold,
+            rank: rankForIndex(index, DAILY_STREAK_THRESHOLDS.length),
+            label: `${threshold}-Day Streak`,
+            description: `Win the Daily Challenge ${threshold} ${plural(threshold, 'day')} in a row.`,
+        });
+    });
+
     return defs;
 }
 
@@ -120,6 +132,10 @@ function metricFor(stats: GameStats, def: AchievementDef): number {
             return stats[def.subKind as ResultTier];
         case 'formationWin':
             return stats.formationWins[def.subKind as FormationCode];
+        case 'dailyStreak':
+            // Reads the best-ever streak, never the live one — a badge must
+            // never re-lock just because today's streak broke.
+            return stats.bestDailyStreak;
         default:
             return 0;
     }

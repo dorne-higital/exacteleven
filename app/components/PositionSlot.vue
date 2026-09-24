@@ -19,9 +19,15 @@ const emit = defineEmits<{
 
 const description = computed(() => describeSlotRole(props.slotData.group, props.slotData.side, props.slotData.rowSize));
 const shortLabel = computed(() => getSlotShortLabel(props.slotData.group, props.slotData.side, props.slotData.rowSize));
-const label = computed(() => (
-    props.slotData.player ? `${description.value}, ${props.slotData.player.name}` : `${description.value}, empty`
-));
+const label = computed(() => {
+    if (!props.slotData.player) {
+        return `${description.value}, empty`;
+    }
+
+    return props.slotData.preset
+        ? `${description.value}, ${props.slotData.player.name}, pre-filled for today`
+        : `${description.value}, ${props.slotData.player.name}`;
+});
 const isEndedEmpty = computed(() => Boolean(props.gameOver) && !props.slotData.player);
 
 function handleClick(): void {
@@ -51,6 +57,7 @@ function handleClick(): void {
         @click="handleClick"
     >
         <template v-if="slotData.player">
+            <span v-if="slotData.preset" aria-hidden="true" class="position-slot__preset" title="Pre-filled for today's Daily Challenge">★</span>
             <span class="position-slot__total">{{ slotData.player.goals + slotData.player.assists }}</span>
             <span class="position-slot__name">{{ shortenPlayerName(slotData.player.name) }}</span>
         </template>
@@ -153,5 +160,17 @@ function handleClick(): void {
     padding: 0 0.15rem;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+// Marks a Daily Challenge slot that started already filled — small enough
+// not to compete with the total/name, positioned so it reads as a badge on
+// the slot rather than another line of content.
+.position-slot__preset {
+    color: var(--color-primary);
+    font-size: 0.6rem;
+    line-height: 1;
+    position: absolute;
+    right: 0.3rem;
+    top: 0.25rem;
 }
 </style>

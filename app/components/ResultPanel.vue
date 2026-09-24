@@ -1,10 +1,15 @@
 <script setup lang="ts">
-import type { ResultTier } from '../../shared/types';
+import type { GameState, ResultTier } from '../../shared/types';
+import type { ChallengePayload, DailyChallengePayload } from '../composables/useGame';
+import type { ShareCardSpec } from '../utils/share-card';
 import { trackEvent } from '../utils/analytics';
 import { getSlotShortLabel } from '../utils/formations';
 import { getDistance } from '../utils/scoring';
+import { buildShareCardBlob, shareOrDownloadBlob } from '../utils/share-card';
 
-type Tone = 'win' | ResultTier | 'bust';
+// 'lost' only ever comes from a Daily Challenge's binary objective outcome —
+// the classic game never reaches it (see shared/types.ts's GameStatus).
+type Tone = 'win' | ResultTier | 'bust' | 'lost';
 
 interface Outcome {
     label: string;
@@ -50,7 +55,7 @@ const TIER_EMOJI: Record<ResultTier, string> = {
     relegated: '🔴',
 };
 
-const { state, startGame } = useGame();
+const { state, startGame, startDailyGame, startChallengeGame } = useGame();
 
 const recap = computed(() => (state.value?.slots ?? []).filter((slot) => slot.player));
 
@@ -75,11 +80,66 @@ const otherSlots = computed(() => recap.value.filter((slot) => slot.id !== starS
 // PlayerChoiceDialog's srAnnouncement).
 const srAnnouncement = ref('');
 
+// The Daily Challenge's binary won/bust/lost outcome, worded per the day's
+// rotating objective kind — kept separate from the classic branch below
+// since the copy genuinely differs per kind, not just the numbers plugged in.
+function getDailyOutcome(game: GameState): Outcome | null {
+    const objective = game.objective;
+
+    if (!objective) {
+        return null;
+    }
+
+    const { value } = objective;
+
+    if (game.status === 'won') {
+        const detail = {
+            exact: `Exact match — ${game.total} on the nose.`,
+            over: `${game.total} cleared the ${value} target.`,
+            under: `${game.total} — stayed under the ${value} ceiling.`,
+            allUnder: `Every player stayed under ${value}.`,
+        }[objective.kind];
+
+        return { label: 'Challenge won', tone: 'win', detail };
+    }
+
+    if (game.status === 'bust') {
+        const breachedSlot = recap.value.find((slot) => slot.player && statTotal(slot.player) >= value);
+        const detail = {
+            exact: `${game.total} went over the ${value} target.`,
+            over: `${game.total} went over — this objective shouldn't be able to bust.`,
+            under: `${game.total} hit the ${value} ceiling.`,
+            allUnder: breachedSlot
+                ? `${breachedSlot.player!.name} hit ${statTotal(breachedSlot.player!)}, over the ${value} cap.`
+                : `A player's stat reached the ${value} cap.`,
+        }[objective.kind];
+
+        return { label: 'Bust', tone: 'bust', detail };
+    }
+
+    if (game.status === 'lost') {
+        const detail = {
+            exact: `${game.total} — needed exactly ${value}.`,
+            over: `${game.total} — needed to clear ${value}.`,
+            under: `${game.total} — this objective shouldn't be able to end in a loss.`,
+            allUnder: `${game.total} — this objective shouldn't be able to end in a loss.`,
+        }[objective.kind];
+
+        return { label: 'Not quite', tone: 'lost', detail };
+    }
+
+    return null;
+}
+
 const outcome = computed<Outcome | null>(() => {
     const game = state.value;
 
     if (!game) {
         return null;
+    }
+
+    if (game.objective) {
+        return getDailyOutcome(game);
     }
 
     if (game.status === 'won') {
@@ -110,6 +170,7 @@ const TONE_CLASS: Record<Tone, string> = {
     avoidedRelegation: 'avoided-relegation',
     relegated: 'relegated',
     bust: 'bust',
+    lost: 'lost',
 };
 
 const toneClass = computed(() => (outcome.value ? TONE_CLASS[outcome.value.tone] : ''));
@@ -196,6 +257,50 @@ onUnmounted(() => {
     }
 });
 
+interface ResultStat {
+    label: string;
+    value: number;
+}
+
+// Drives the stats <dl> below — a single list instead of hardcoded rows so
+// the classic exact-target game and each of the daily objective kinds can
+// show a different (and different number of) stats without templating four
+// near-identical variants of the same markup.
+const resultStats = computed<ResultStat[]>(() => {
+    const game = state.value;
+
+    if (!game || !outcome.value) {
+        return [];
+    }
+
+    const { objective } = game;
+
+    if (!objective) {
+        const stats: ResultStat[] = [
+            { label: 'Target', value: game.target },
+            { label: 'Total', value: displayTotal.value },
+        ];
+
+        if (outcome.value.tone !== 'win') {
+            stats.push({ label: 'Distance', value: getDistance(game.total, game.target) });
+        }
+
+        return stats;
+    }
+
+    const stats: ResultStat[] = [];
+
+    if (objective.kind !== 'allUnder') {
+        const label = objective.kind === 'exact' ? 'Target' : objective.kind === 'over' ? 'Goal' : 'Limit';
+
+        stats.push({ label, value: objective.value });
+    }
+
+    stats.push({ label: 'Total', value: displayTotal.value });
+
+    return stats;
+});
+
 const resultEmoji = computed(() => {
     const game = state.value;
 
@@ -211,6 +316,10 @@ const resultEmoji = computed(() => {
         return '🏆';
     }
 
+    if (game.status === 'lost') {
+        return '❌';
+    }
+
     return game.tier ? TIER_EMOJI[game.tier] : '';
 });
 
@@ -222,7 +331,18 @@ const siteConfig = useSiteConfig();
 const shareText = computed(() => {
     const game = state.value;
 
-    return game ? `Exact XI · ${game.formationCode} ${resultEmoji.value} ${game.total}/${game.target}\n${siteConfig.url}` : '';
+    if (!game) {
+        return '';
+    }
+
+    if (game.objective) {
+        const resultWord = game.status === 'won' ? 'WON' : game.status === 'bust' ? 'BUST' : 'LOST';
+        const label = game.dailyDate ? `Exact XI Daily · ${game.dailyDate}` : 'Exact XI Challenge';
+
+        return `${label} · ${resultEmoji.value} ${game.objective.label} — ${resultWord} (${game.total})\n${siteConfig.url}`;
+    }
+
+    return `Exact XI · ${game.formationCode} ${resultEmoji.value} ${game.total}/${game.target}\n${siteConfig.url}`;
 });
 
 const copied = ref(false);
@@ -248,10 +368,108 @@ async function handleCopy(): Promise<void> {
     }
 }
 
-function handlePlayAgain(): void {
-    if (state.value) {
-        startGame(state.value.formationCode);
+const shareImageSpec = computed<ShareCardSpec | null>(() => {
+    const game = state.value;
+
+    if (!game || !outcome.value) {
+        return null;
     }
+
+    const lines: string[] = [];
+
+    if (starSlot.value?.player) {
+        lines.push(`Star man: ${starSlot.value.player.name} (${statTotal(starSlot.value.player)})`);
+    }
+
+    lines.push(siteConfig.url);
+
+    return {
+        heading: outcome.value.label,
+        subheading: outcome.value.detail,
+        highlight: { label: 'Total', value: String(displayTotal.value) },
+        lines,
+    };
+});
+
+const shareImageLabel = ref('Share image');
+const sharingImage = ref(false);
+let shareImageLabelTimeout: number | undefined;
+
+async function handleShareImage(): Promise<void> {
+    const spec = shareImageSpec.value;
+    const game = state.value;
+
+    if (!spec || !game || sharingImage.value) {
+        return;
+    }
+
+    sharingImage.value = true;
+
+    try {
+        const blob = await buildShareCardBlob(spec);
+
+        if (blob) {
+            const filename = game.dailyDate
+                ? `exact-xi-daily-${game.dailyDate}.png`
+                : `exact-xi-${game.formationCode}${game.objective ? '-challenge' : ''}.png`;
+            const result = await shareOrDownloadBlob(blob, filename, { title: 'Exact XI', text: shareText.value });
+
+            shareImageLabel.value = result === 'shared' ? 'Shared!' : 'Saved!';
+            trackEvent('share_image', { formation: game.formationCode, result });
+        }
+    } catch {
+        // Share sheet dismissed, or a canvas/Web Share failure — this is an
+        // optional flourish, so fail silently rather than showing an error.
+    } finally {
+        sharingImage.value = false;
+        window.clearTimeout(shareImageLabelTimeout);
+        shareImageLabelTimeout = window.setTimeout(() => {
+            shareImageLabel.value = 'Share image';
+        }, 2000);
+    }
+}
+
+function handlePlayAgain(): void {
+    const game = state.value;
+
+    if (!game) {
+        return;
+    }
+
+    if (game.objective && game.dailyDate) {
+        // Reconstructed from the current state rather than re-fetched: a
+        // preset slot's player is never overwritten once the game starts
+        // (openSlot() bails out on any slot that already has a player), so
+        // this is exactly the payload /api/daily originally returned.
+        const prefilled = game.slots
+            .filter((slot) => slot.preset && slot.player)
+            .map((slot) => ({ slotId: slot.id, player: slot.player! }));
+        const payload: DailyChallengePayload = {
+            date: game.dailyDate,
+            formationCode: game.formationCode,
+            objective: game.objective,
+            prefilled,
+        };
+
+        startDailyGame(payload);
+
+        return;
+    }
+
+    if (game.objective && game.challengeKey) {
+        // Same reconstruction trick as the daily branch above — a challenge's
+        // preset slots are never overwritten once the game starts.
+        const prefilled = game.slots
+            .filter((slot) => slot.preset && slot.player)
+            .map((slot) => ({ slotId: slot.id, player: slot.player! }));
+        const payload: ChallengePayload = { formationCode: game.formationCode, objective: game.objective, prefilled };
+
+        startChallengeGame(payload, game.challengeKey);
+
+        return;
+    }
+
+    startGame(game.formationCode);
 }
 
 function statTotal(player: { goals: number; assists: number }): number {
@@ -296,17 +514,9 @@ function compactStatCaption(player: { goals: number; assists: number }): string 
         <p class="result-panel__detail">{{ outcome.detail }}</p>
 
         <dl class="result-panel__stats">
-            <div class="result-panel__stat">
-                <dt>Target</dt>
-                <dd>{{ state.target }}</dd>
-            </div>
-            <div class="result-panel__stat">
-                <dt>Total</dt>
-                <dd>{{ displayTotal }}</dd>
-            </div>
-            <div v-if="outcome.tone !== 'win'" class="result-panel__stat">
-                <dt>Distance</dt>
-                <dd>{{ getDistance(state.total, state.target) }}</dd>
+            <div v-for="stat in resultStats" :key="stat.label" class="result-panel__stat">
+                <dt>{{ stat.label }}</dt>
+                <dd>{{ stat.value }}</dd>
             </div>
         </dl>
 
@@ -314,7 +524,7 @@ function compactStatCaption(player: { goals: number; assists: number }): string 
             <button class="result-panel__action result-panel__action--primary" type="button" @click="handlePlayAgain">
                 Play again
             </button>
-            <NuxtLink class="result-panel__action" to="/">Change formation</NuxtLink>
+            <NuxtLink v-if="!state.objective" class="result-panel__action" to="/">Change formation</NuxtLink>
         </div>
 
         <div class="result-panel__share">
@@ -322,6 +532,10 @@ function compactStatCaption(player: { goals: number; assists: number }): string 
             <button class="result-panel__share-copy" type="button" @click="handleCopy">
                 {{ copied ? 'Copied!' : 'Copy' }}
             </button>
+        </div>
+
+        <div class="result-panel__share-extra">
+            <button class="result-panel__action" type="button" @click="handleShareImage">{{ shareImageLabel }}</button>
         </div>
 
         <div v-if="starSlot" class="result-panel__starman">
@@ -417,6 +631,13 @@ function compactStatCaption(player: { goals: number; assists: number }): string 
 .result-panel--bust {
     animation: result-panel-bust-flash 0.5s ease-out;
     border-left-color: var(--color-danger);
+}
+
+// A Daily Challenge "didn't meet the objective" finish — a miss, not a
+// disaster, so it sits at the same softness as avoided-relegation rather
+// than reusing bust's full danger color or its flash animation.
+.result-panel--lost {
+    border-left-color: color-mix(in srgb, var(--color-danger) 55%, var(--color-foreground) 45%);
 }
 
 @keyframes result-panel-bust-flash {
@@ -532,6 +753,10 @@ function compactStatCaption(player: { goals: number; assists: number }): string 
 .result-panel--relegated .result-panel__headline,
 .result-panel--bust .result-panel__headline {
     color: var(--color-danger);
+}
+
+.result-panel--lost .result-panel__headline {
+    color: color-mix(in srgb, var(--color-danger) 65%, var(--color-foreground) 35%);
 }
 
 .result-panel__detail {
@@ -714,6 +939,12 @@ function compactStatCaption(player: { goals: number; assists: number }): string 
     gap: 0.75rem;
     justify-content: space-between;
     padding: 0.6rem 0.75rem;
+}
+
+.result-panel__share-extra {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
 }
 
 .result-panel__share-text {

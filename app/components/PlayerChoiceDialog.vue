@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { DrawnPlayer, PositionGroup } from '../../shared/types';
+import { classifyReveal, pickFlavorLine } from '../utils/reveal-flavor';
 
 const { state, isDrawing, pickPlayer, useReroll, closeDialog } = useGame();
 
@@ -37,6 +38,9 @@ const revealedName = ref('');
 const displayValue = ref(0);
 const srAnnouncement = ref('');
 const pickError = ref(false);
+// A short, non-essential flavor line for a notable reveal (bust/win/cutting
+// it fine) — null on a routine pick, so most reveals stay quick and quiet.
+const revealFlavor = ref<string | null>(null);
 // Which candidate the player actually tapped — every option shares the same
 // aria-disabled condition while a pick is revealing, so without this all
 // three dim identically and there's no visual confirmation of which one was
@@ -207,6 +211,7 @@ async function handlePick(candidate: DrawnPlayer): Promise<void> {
     displayValue.value = 0;
     pickError.value = false;
     pickedId.value = candidate.id;
+    revealFlavor.value = null;
 
     const result = await pickPlayer(candidate);
 
@@ -226,13 +231,47 @@ async function handlePick(candidate: DrawnPlayer): Promise<void> {
     // ScoreBar's Total — that field sits outside this modal dialog and is
     // inert, so screen readers never see it change while this is open.
     const total = state.value?.total ?? 0;
-    const target = state.value?.target ?? 0;
+    const objective = state.value?.objective;
 
-    srAnnouncement.value = `${revealedName.value}: ${result.goals + result.assists}. Running total ${total} of target ${target}.`;
+    // The classic game and the daily 'exact' objective both frame this as
+    // "total vs. a target"; the other daily objectives (over/under/allUnder)
+    // don't have a single target number to compare against here — ScoreBar
+    // and ResultPanel already carry that context, so this just states the
+    // running total.
+    srAnnouncement.value = (!objective || objective.kind === 'exact')
+        ? `${revealedName.value}: ${result.goals + result.assists}. Running total ${total} of target ${objective?.value ?? state.value?.target ?? 0}.`
+        : `${revealedName.value}: ${result.goals + result.assists}. Running total ${total}.`;
+
+    // Distance from whatever's just been revealed to the relevant ceiling,
+    // unified across every objective kind (see reveal-flavor.ts) — 'over'
+    // has no ceiling, so it's never eligible for a "cutting it fine" line.
+    const marginToLimit = (() => {
+        if (!objective) {
+            return (state.value?.target ?? 0) - total;
+        }
+
+        if (objective.kind === 'exact' || objective.kind === 'under') {
+            return objective.value - total;
+        }
+
+        if (objective.kind === 'allUnder') {
+            return objective.value - (result.goals + result.assists);
+        }
+
+        return null;
+    })();
+
+    const mood = classifyReveal(state.value?.status ?? 'playing', marginToLimit);
+
+    revealFlavor.value = mood ? pickFlavorLine(mood) : null;
+
+    if (revealFlavor.value) {
+        srAnnouncement.value += ` ${revealFlavor.value}`;
+    }
 
     window.setTimeout(() => {
         dialogRef.value?.close();
-    }, 500);
+    }, revealFlavor.value ? 1100 : 500);
 }
 
 async function handleReroll(): Promise<void> {
@@ -291,6 +330,7 @@ function handleNativeClose(): void {
         <div v-if="showResult" class="player-choice__result">
             <p class="player-choice__result-name">{{ revealedName }}</p>
             <p aria-hidden="true" class="player-choice__result-value">{{ displayValue }}</p>
+            <p v-if="revealFlavor" aria-hidden="true" class="player-choice__result-flavor">{{ revealFlavor }}</p>
         </div>
 
         <button
@@ -515,6 +555,12 @@ function handleNativeClose(): void {
     font-family: var(--font-display);
     font-size: 2.5rem;
     font-weight: 700;
+    margin: 0;
+}
+
+.player-choice__result-flavor {
+    color: color-mix(in srgb, var(--color-foreground) 70%, transparent);
+    font-size: 0.8rem;
     margin: 0;
 }
 

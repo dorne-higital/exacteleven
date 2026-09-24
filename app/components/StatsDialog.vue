@@ -92,6 +92,7 @@ const achievementSections = computed<AchievementSection[]>(() => {
         toSection('games-won', 'Exact Wins', byCategory('gamesWon')),
         ...TIERS.map((tier) => toSection(`tier-${tier.key}`, tier.label, byCategory('tier', tier.key))),
         ...formations.map((formation) => toSection(`formation-${formation.code}`, `${formation.code} Wins`, byCategory('formationWin', formation.code))),
+        toSection('daily-streak', 'Daily Streak', byCategory('dailyStreak')),
     ];
 });
 
@@ -146,6 +147,10 @@ function handleReset(): void {
                 <div class="stats-dialog__hero-stat">
                     <span class="stats-dialog__hero-value">{{ winRate }}%</span>
                     <span class="stats-dialog__hero-label">Win rate</span>
+                </div>
+                <div class="stats-dialog__hero-stat">
+                    <span class="stats-dialog__hero-value">{{ stats.dailyStreak }}</span>
+                    <span class="stats-dialog__hero-label">Daily streak</span>
                 </div>
             </div>
 

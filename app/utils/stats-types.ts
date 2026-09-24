@@ -25,4 +25,12 @@ export interface GameStats {
     formationPlays: Record<FormationCode, number>;
     /** How many EXACT wins landed on each formation — a subset of formationPlays, feeds the per-formation achievements in utils/achievements.ts. */
     formationWins: Record<FormationCode, number>;
+    /** Current consecutive-day Daily Challenge win streak — NOT used by achievements directly (it can go back to 0), see bestDailyStreak. */
+    dailyStreak: number;
+    /** The highest dailyStreak ever reached — monotonic, so achievements read this instead of the live streak (a badge must never re-lock). */
+    bestDailyStreak: number;
+    dailyWins: number;
+    dailyPlays: number;
+    /** The YYYY-MM-DD of the last completed Daily Challenge attempt — used both to detect a consecutive-day streak and to guard against a same-day replay (e.g. via "Play again") padding the stats twice. */
+    lastDailyResultDate: string | null;
 }

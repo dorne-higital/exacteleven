@@ -1,7 +1,25 @@
-import type { DrawnPlayer, FormationCode, GameSlot, GameState, Player, RevealResult } from '../../shared/types';
+import type { DrawnPlayer, FormationCode, GameSlot, GameState, Objective, Player, RevealResult } from '../../shared/types';
 import { trackEvent } from '../utils/analytics';
+import { getObjectiveResult } from '../utils/daily-scoring';
 import { getFormation } from '../utils/formations';
 import { calculateTotal, getGameResult } from '../utils/scoring';
+
+// The /api/daily response shape — mirrors server/api/daily.get.ts's return value.
+export interface DailyChallengePayload {
+    date: string;
+    formationCode: FormationCode;
+    objective: Objective;
+    prefilled: Array<{ slotId: string; player: Player }>;
+}
+
+// The /api/challenge response shape — mirrors server/api/challenge.get.ts's
+// return value. Same shape as DailyChallengePayload minus `date`, since a
+// custom challenge isn't tied to a calendar day.
+export interface ChallengePayload {
+    formationCode: FormationCode;
+    objective: Objective;
+    prefilled: Array<{ slotId: string; player: Player }>;
+}
 
 const REROLLS_PER_GAME = 1;
 const GAME_STORAGE_KEY = 'exact-xi-game';
@@ -59,9 +77,57 @@ function createInitialState(formationCode: FormationCode): GameState {
     };
 }
 
+// Shared by the Daily Challenge and a custom challenge link — both are just
+// "a formation with an objective and some slots pre-filled," differing only
+// in which identity field (dailyDate vs challengeKey) resume-matching uses.
+function createObjectivePrefilledState(
+    formationCode: FormationCode,
+    objective: Objective,
+    prefilled: Array<{ slotId: string; player: Player }>,
+): GameState {
+    const formation = getFormation(formationCode);
+
+    if (!formation) {
+        throw new Error(`Unknown formation code: ${formationCode}`);
+    }
+
+    const prefilledBySlotId = new Map(prefilled.map((entry) => [entry.slotId, entry.player]));
+    const prefilledPlayers = prefilled.map((entry) => entry.player);
+
+    return {
+        gameId: crypto.randomUUID(),
+        formationCode,
+        target: formation.target,
+        slots: formation.slots.map((slot) => {
+            const player = prefilledBySlotId.get(slot.id) ?? null;
+
+            return { ...slot, player, preset: player !== null };
+        }),
+        // Pre-filled players are already "offered" — they can't also turn up
+        // in a later live draw for one of the remaining slots.
+        offeredPlayerIds: prefilledPlayers.map((player) => player.id),
+        rerollsLeft: REROLLS_PER_GAME,
+        total: calculateTotal(prefilledPlayers),
+        status: 'playing',
+        tier: null,
+        activeSlotId: null,
+        offeredPlayers: [],
+        statsRecorded: false,
+        objective,
+    };
+}
+
+function createDailyState(payload: DailyChallengePayload): GameState {
+    return { ...createObjectivePrefilledState(payload.formationCode, payload.objective, payload.prefilled), dailyDate: payload.date };
+}
+
+function createChallengeState(payload: ChallengePayload, challengeKey: string): GameState {
+    return { ...createObjectivePrefilledState(payload.formationCode, payload.objective, payload.prefilled), challengeKey };
+}
+
 export function useGame() {
     const state = useState<GameState | null>('exact-xi-game', () => null);
-    const { recordOutcome } = useStats();
+    const { recordOutcome, recordDailyOutcome } = useStats();
     // True while a /api/draw request is in flight (initial draw or a reroll).
     // Shared globally (like `state`) so every slot button and the choice
     // dialog agree on it, preventing two draws racing on the same exclusion
@@ -80,6 +146,54 @@ export function useGame() {
         state.value = createInitialState(formationCode);
         writePersistedGame(state.value);
         trackEvent('game_start', { formation: formationCode, target: state.value.target });
+    }
+
+    function startDailyGame(payload: DailyChallengePayload): void {
+        state.value = createDailyState(payload);
+        writePersistedGame(state.value);
+        trackEvent('daily_start', {
+            date: payload.date,
+            formation: payload.formationCode,
+            objective: payload.objective.kind,
+        });
+    }
+
+    // Same restore-on-refresh pattern as resumeGame, but matched on the
+    // puzzle's date rather than formation code — a new calendar day should
+    // discard yesterday's persisted daily game rather than resume it.
+    function resumeDailyGame(date: string): boolean {
+        const persisted = readPersistedGame();
+
+        if (!persisted || persisted.dailyDate !== date) {
+            return false;
+        }
+
+        state.value = persisted;
+        trackEvent('daily_resume', { date });
+
+        return true;
+    }
+
+    // challengeKey is the canonical encoded config string (see
+    // app/pages/challenge.vue) — a custom challenge never expires the way a
+    // daily one does, so resuming just needs an exact match on that config.
+    function startChallengeGame(payload: ChallengePayload, challengeKey: string): void {
+        state.value = createChallengeState(payload, challengeKey);
+        writePersistedGame(state.value);
+        trackEvent('challenge_start', { formation: payload.formationCode, objective: payload.objective.kind });
+    }
+
+    function resumeChallengeGame(challengeKey: string): boolean {
+        const persisted = readPersistedGame();
+
+        if (!persisted || persisted.challengeKey !== challengeKey) {
+            return false;
+        }
+
+        state.value = persisted;
+        trackEvent('challenge_resume');
+
+        return true;
     }
 
     // Restores a game persisted for this exact formation, if one exists —
@@ -236,7 +350,9 @@ export function useGame() {
 
         game.total = calculateTotal(pickedPlayers);
 
-        const outcome = getGameResult(game.total, game.target, pickedPlayers.length, game.slots.length);
+        const outcome = game.objective
+            ? getObjectiveResult(game.objective, pickedPlayers, game.slots.length)
+            : getGameResult(game.total, game.target, pickedPlayers.length, game.slots.length);
 
         game.status = outcome.status;
         game.tier = outcome.tier;
@@ -246,14 +362,36 @@ export function useGame() {
         // finished game) can't double-count it.
         if (!game.statsRecorded && outcome.status !== 'playing') {
             game.statsRecorded = true;
-            recordOutcome(outcome.status, outcome.tier, game.formationCode);
-            trackEvent('game_over', {
-                formation: game.formationCode,
-                status: outcome.status,
-                tier: outcome.tier,
-                total: game.total,
-                target: game.target,
-            });
+
+            if (game.objective && game.dailyDate) {
+                recordDailyOutcome(outcome.status, game.dailyDate);
+                trackEvent('daily_over', {
+                    date: game.dailyDate,
+                    objective: game.objective.kind,
+                    status: outcome.status,
+                    total: game.total,
+                });
+            } else if (game.objective) {
+                // A custom challenge is a one-off the creator configured
+                // themselves — it doesn't feed classic stats (gamesPlayed,
+                // formationPlays) or the Daily streak, since either would let
+                // a hand-picked easy/impossible board skew a player's record.
+                trackEvent('challenge_over', {
+                    formation: game.formationCode,
+                    objective: game.objective.kind,
+                    status: outcome.status,
+                    total: game.total,
+                });
+            } else {
+                recordOutcome(outcome.status, outcome.tier, game.formationCode);
+                trackEvent('game_over', {
+                    formation: game.formationCode,
+                    status: outcome.status,
+                    tier: outcome.tier,
+                    total: game.total,
+                    target: game.target,
+                });
+            }
         }
 
         writePersistedGame(game);
@@ -285,6 +423,10 @@ export function useGame() {
         drawError,
         startGame,
         resumeGame,
+        startDailyGame,
+        resumeDailyGame,
+        startChallengeGame,
+        resumeChallengeGame,
         openSlot,
         pickPlayer,
         useReroll,

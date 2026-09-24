@@ -1,17 +1,30 @@
 <script setup lang="ts">
-import type { GameStatus } from '../../shared/types';
+import type { GameStatus, Objective } from '../../shared/types';
 
 const props = defineProps<{
     target: number;
     total: number;
     remainingSlots: number;
     status: GameStatus;
+    /** Set only for a Daily Challenge — swaps the "Target" label/progress-bar semantics for the day's rotating objective. */
+    objective?: Objective;
 }>();
+
+// Every objective kind except 'allUnder' still boils down to "compare the
+// running total against one number" — allUnder's win condition is per-player
+// instead, so there's no single total-vs-value bar to draw for it.
+const objectiveValue = computed(() => props.objective?.value ?? props.target);
+const showProgressBar = computed(() => props.objective?.kind !== 'allUnder');
 
 // Decorative only — the numbers above already carry the accessible state via
 // the aria-live region, so this bar is aria-hidden rather than adding a
 // second, potentially-conflicting accessible representation.
-const progress = computed(() => (props.target > 0 ? Math.min(100, (props.total / props.target) * 100) : 0));
+const progress = computed(() => (
+    showProgressBar.value && objectiveValue.value > 0 ? Math.min(100, (props.total / objectiveValue.value) * 100) : 0
+));
+
+const targetLabel = computed(() => (props.objective ? props.objective.label : 'Target'));
+const targetValue = computed(() => (props.objective && props.objective.kind !== 'exact' ? null : objectiveValue.value));
 
 // "Remaining" implies more picks are still possible — once the game has
 // ended (win, bust, or finished), the same count is unfilled slots, not
@@ -22,9 +35,9 @@ const remainingLabel = computed(() => (props.status === 'playing' ? 'Remaining' 
 <template>
     <div class="score-bar">
         <div class="score-bar__row">
-            <div class="score-bar__item">
-                <span class="score-bar__label">Target</span>
-                <span class="score-bar__value">{{ target }}</span>
+            <div class="score-bar__item" :class="{ 'score-bar__item--wide': targetValue === null }">
+                <span class="score-bar__label">{{ targetLabel }}</span>
+                <span v-if="targetValue !== null" class="score-bar__value">{{ targetValue }}</span>
             </div>
 
             <!--
@@ -46,7 +59,7 @@ const remainingLabel = computed(() => (props.status === 'playing' ? 'Remaining' 
             </div>
         </div>
 
-        <div aria-hidden="true" class="score-bar__track">
+        <div v-if="showProgressBar" aria-hidden="true" class="score-bar__track">
             <div
                 class="score-bar__fill"
                 :class="{ 'score-bar__fill--bust': status === 'bust' }"
@@ -70,6 +83,7 @@ const remainingLabel = computed(() => (props.status === 'playing' ? 'Remaining' 
 .score-bar__row {
     align-items: center;
     display: flex;
+    flex-wrap: wrap;
     gap: 1rem;
     justify-content: space-between;
 }
@@ -79,6 +93,14 @@ const remainingLabel = computed(() => (props.status === 'playing' ? 'Remaining' 
     flex-direction: column;
     gap: 0.15rem;
     text-align: center;
+}
+
+// The 'allUnder' daily objective has no single target number, so its label
+// (the full objective sentence) needs more breathing room than a 3-column
+// row gives — it takes over the row instead of sitting alongside Total/Unfilled.
+.score-bar__item--wide {
+    flex-basis: 100%;
+    order: -1;
 }
 
 .score-bar__label {

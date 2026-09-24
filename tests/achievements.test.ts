@@ -16,17 +16,23 @@ function emptyStatsFixture(overrides: Partial<GameStats> = {}): GameStats {
         bestResult: null,
         formationPlays: Object.fromEntries(formations.map((formation) => [formation.code, 0])) as GameStats['formationPlays'],
         formationWins: Object.fromEntries(formations.map((formation) => [formation.code, 0])) as GameStats['formationWins'],
+        dailyStreak: 0,
+        bestDailyStreak: 0,
+        dailyWins: 0,
+        dailyPlays: 0,
+        lastDailyResultDate: null,
         ...overrides,
     };
 }
 
 describe('achievements', () => {
-    it('defines 10 games-played + 9 games-won + (5 tiers × 9) + (7 formations × 9) = 127 badges', () => {
-        expect(ACHIEVEMENTS).toHaveLength(127);
+    it('defines 10 games-played + 9 games-won + (5 tiers × 9) + (7 formations × 9) + 7 daily-streak = 134 badges', () => {
+        expect(ACHIEVEMENTS).toHaveLength(134);
         expect(ACHIEVEMENTS.filter((def) => def.category === 'gamesPlayed')).toHaveLength(10);
         expect(ACHIEVEMENTS.filter((def) => def.category === 'gamesWon')).toHaveLength(9);
         expect(ACHIEVEMENTS.filter((def) => def.category === 'tier')).toHaveLength(TIERS.length * 9);
         expect(ACHIEVEMENTS.filter((def) => def.category === 'formationWin')).toHaveLength(formations.length * 9);
+        expect(ACHIEVEMENTS.filter((def) => def.category === 'dailyStreak')).toHaveLength(7);
     });
 
     it('gives every achievement a unique id', () => {
@@ -78,5 +84,14 @@ describe('achievements', () => {
         expect(championsLeagueUnlocked).toEqual([1, 3, 5]);
         expect(formation442Unlocked).toEqual([1, 3, 5, 10]);
         expect(europaLeagueUnlocked).toHaveLength(0);
+    });
+
+    it('unlocks daily-streak badges from the best-ever streak, not the live one that can reset to 0', () => {
+        const progress = getAchievementProgress(emptyStatsFixture({ dailyStreak: 0, bestDailyStreak: 10 }));
+        const dailyStreakUnlocked = progress
+            .filter((entry) => entry.def.category === 'dailyStreak' && entry.unlocked)
+            .map((entry) => entry.def.threshold);
+
+        expect(dailyStreakUnlocked).toEqual([3, 7]);
     });
 });

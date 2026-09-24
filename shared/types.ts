@@ -34,6 +34,17 @@ export interface Slot {
     rowSize: number;
 }
 
+// The Daily Challenge's rotating win condition — 'exact' is the same
+// hit-it-on-the-nose rule the classic game always uses; the other three only
+// ever appear on a daily game. See shared/daily.ts for how a date maps to one.
+export type ObjectiveKind = 'exact' | 'over' | 'under' | 'allUnder';
+
+export interface Objective {
+    kind: ObjectiveKind;
+    value: number;
+    label: string;
+}
+
 export interface Formation {
     code: FormationCode;
     /** The formation code read as a number, e.g. 442 — also the score target. */
@@ -43,7 +54,10 @@ export interface Formation {
     slots: Slot[];
 }
 
-export type GameStatus = 'playing' | 'won' | 'bust' | 'finished';
+// 'lost' only ever comes from a Daily Challenge's binary objective outcome
+// (see app/utils/daily-scoring.ts) — the classic game never produces it,
+// only 'finished' with a tier.
+export type GameStatus = 'playing' | 'won' | 'bust' | 'finished' | 'lost';
 
 // The league-table ladder a non-exact, non-bust finish lands on, worst to
 // best read top-down in the UI (best first here): only set when
@@ -52,6 +66,8 @@ export type ResultTier = 'championsLeague' | 'europaLeague' | 'midTable' | 'avoi
 
 export interface GameSlot extends Slot {
     player: Player | null;
+    /** True for a Daily Challenge slot that started pre-filled — purely cosmetic (PositionSlot shows a marker), never set on a classic game. */
+    preset?: boolean;
 }
 
 // The shape /api/draw returns for each of the 3 candidates offered for a slot:
@@ -87,4 +103,10 @@ export interface GameState {
     offeredPlayers: DrawnPlayer[];
     /** Guards against double-recording this game's outcome into localStorage stats if the component re-renders after the game ends. */
     statsRecorded: boolean;
+    /** Set only for a Daily Challenge game — its rotating win condition. Absent on a classic game, which always uses the plain "hit `target` exactly" rule. */
+    objective?: Objective;
+    /** Set only for a Daily Challenge game — the YYYY-MM-DD it was generated for, used to resume it correctly and to record the streak against the right day. */
+    dailyDate?: string;
+    /** Set only for a custom challenge-link game — the canonical encoded config it was generated from, used to resume it correctly. A challenge game has `objective` but no `dailyDate`, which is what tells useGame.ts's pickPlayer() not to touch classic stats or the daily streak. */
+    challengeKey?: string;
 }

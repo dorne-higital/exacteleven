@@ -1,12 +1,17 @@
 import type { FormationCode, GameStatus, ResultTier } from '../../shared/types';
+import type { AchievementDef } from '../utils/achievements';
 import type { BestResult, GameStats } from '../utils/stats-types';
 import type { Outcome } from '../utils/scoring';
+import { dayIndexForDate } from '../../shared/daily';
+import { backfillSeenAchievements, diffNewlyUnlocked, readSeenAchievementIds, writeSeenAchievementIds } from '../utils/achievement-notifications';
 import { formations } from '../utils/formations';
 import { isBetterOutcome } from '../utils/scoring';
 
 const STATS_STORAGE_KEY = 'exact-xi-stats';
 
-const COUNT_KEYS = ['gamesPlayed', 'wins', 'championsLeague', 'europaLeague', 'midTable', 'avoidedRelegation', 'relegated', 'busts'] as const;
+const COUNT_KEYS = ['gamesPlayed', 'wins', 'championsLeague', 'europaLeague', 'midTable', 'avoidedRelegation', 'relegated', 'busts', 'dailyStreak', 'bestDailyStreak', 'dailyWins', 'dailyPlays'] as const;
+
+const DAILY_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 const VALID_OUTCOMES: Outcome[] = ['champion', 'championsLeague', 'europaLeague', 'midTable', 'avoidedRelegation', 'relegated'];
 
@@ -63,6 +68,12 @@ function sanitizeStats(parsed: unknown): Partial<GameStats> {
         clean.bestResult = null;
     }
 
+    if (typeof raw.lastDailyResultDate === 'string' && DAILY_DATE_PATTERN.test(raw.lastDailyResultDate)) {
+        clean.lastDailyResultDate = raw.lastDailyResultDate;
+    } else if (raw.lastDailyResultDate === null) {
+        clean.lastDailyResultDate = null;
+    }
+
     return clean;
 }
 
@@ -83,6 +94,11 @@ function emptyStats(): GameStats {
         bestResult: null,
         formationPlays: emptyFormationRecord(),
         formationWins: emptyFormationRecord(),
+        dailyStreak: 0,
+        bestDailyStreak: 0,
+        dailyWins: 0,
+        dailyPlays: 0,
+        lastDailyResultDate: null,
     };
 }
 
@@ -119,6 +135,11 @@ function writeStoredStats(stats: GameStats): void {
 
 export function useStats() {
     const stats = useState<GameStats>('exact-xi-stats', emptyStats);
+    // A small queue, not a single value — in principle one outcome could
+    // cross more than one badge's threshold at once (e.g. a formation-win
+    // count and a games-won count in the same pick). AchievementToast.vue
+    // shows one at a time and shifts this as each is dismissed.
+    const newlyUnlocked = useState<AchievementDef[]>('exact-xi-newly-unlocked', () => []);
 
     // Called once from app.vue's onMounted, same as useTheme's initTheme —
     // localStorage isn't available during SSR, so the default above renders
@@ -126,7 +147,36 @@ export function useStats() {
     function loadStats(): void {
         if (import.meta.client) {
             stats.value = readStoredStats();
+            // One-time migration for a player who already had stats before
+            // achievement notifications existed — silently backfills what
+            // they already own so recordOutcome's next call doesn't treat
+            // their whole trophy cabinet as brand new.
+            backfillSeenAchievements(stats.value);
         }
+    }
+
+    // Compares stats before/after a mutation and queues a toast for any
+    // achievement that crossed its threshold just now — shared by both
+    // recordOutcome and recordDailyOutcome below.
+    function queueNewlyUnlocked(before: GameStats, after: GameStats): void {
+        if (!import.meta.client) {
+            return;
+        }
+
+        const seen = readSeenAchievementIds();
+        const fresh = diffNewlyUnlocked(before, after, seen);
+
+        if (fresh.length === 0) {
+            return;
+        }
+
+        fresh.forEach((def) => seen.add(def.id));
+        writeSeenAchievementIds(seen);
+        newlyUnlocked.value = [...newlyUnlocked.value, ...fresh];
+    }
+
+    function dismissUnlocked(): void {
+        newlyUnlocked.value = newlyUnlocked.value.slice(1);
     }
 
     // Every completed game lands in exactly one bucket: won, bust, or one of
@@ -161,6 +211,44 @@ export function useStats() {
             next.bestResult = { outcome, formationCode };
         }
 
+        queueNewlyUnlocked(stats.value, next);
+        stats.value = next;
+
+        if (import.meta.client) {
+            writeStoredStats(next);
+        }
+    }
+
+    // Daily Challenge outcomes are recorded separately from the classic
+    // ladder (recordOutcome above) — a daily "win" isn't a championsLeague
+    // finish or a formation win, it's its own streak-based stat.
+    function recordDailyOutcome(status: GameStatus, date: string): void {
+        const current = stats.value;
+
+        // Only the first completed attempt each calendar day counts —
+        // replaying today's challenge (e.g. via "Play again") shouldn't pad
+        // the streak or the play/win counts.
+        if (current.lastDailyResultDate === date) {
+            return;
+        }
+
+        const isWin = status === 'won';
+        const isConsecutiveDay = current.lastDailyResultDate !== null
+            && dayIndexForDate(date) - dayIndexForDate(current.lastDailyResultDate) === 1;
+        const nextStreak = isWin ? (isConsecutiveDay ? current.dailyStreak + 1 : 1) : 0;
+
+        const next: GameStats = {
+            ...current,
+            dailyPlays: current.dailyPlays + 1,
+            dailyWins: current.dailyWins + (isWin ? 1 : 0),
+            dailyStreak: nextStreak,
+            // Monotonic on purpose — achievements read this, never the live
+            // streak, so a badge can't re-lock once a streak breaks.
+            bestDailyStreak: Math.max(current.bestDailyStreak, nextStreak),
+            lastDailyResultDate: date,
+        };
+
+        queueNewlyUnlocked(current, next);
         stats.value = next;
 
         if (import.meta.client) {
@@ -176,5 +264,5 @@ export function useStats() {
         }
     }
 
-    return { stats, loadStats, recordOutcome, resetStats };
+    return { stats, newlyUnlocked, loadStats, recordOutcome, recordDailyOutcome, dismissUnlocked, resetStats };
 }

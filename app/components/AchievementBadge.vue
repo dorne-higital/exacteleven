@@ -57,13 +57,20 @@ const colors = computed(() => (props.unlocked ? RANK_COLORS[props.rank] : LOCKED
             />
         </template>
 
-        <template v-else>
+        <template v-else-if="category === 'formationWin'">
             <rect :stroke="colors.accent" fill="none" height="20" rx="2" stroke-width="1.6" width="24" x="20" y="18" />
             <line :stroke="colors.accent" stroke-width="1.2" x1="20" x2="44" y1="28" y2="28" />
             <circle :stroke="colors.accent" cx="32" cy="28" fill="none" r="4" stroke-width="1.2" />
             <circle :fill="colors.accent" cx="26" cy="34" r="1.6" />
             <circle :fill="colors.accent" cx="38" cy="34" r="1.6" />
             <circle :fill="colors.accent" cx="32" cy="21" r="1.6" />
+        </template>
+
+        <template v-else>
+            <path
+                :fill="colors.accent"
+                d="M32 16 c2 5 8 7 8 13.5 c0 5.2 -3.6 9.5 -8 9.5 s-8 -4.3 -8 -9.5 c0 -1.8 0.8 -3.2 1.8 -4.5 c0.2 3 2 4.8 3.4 4.8 c-0.8 -4.3 1.3 -8 2.8 -13.3 Z"
+            />
         </template>
 
         <text class="achievement-badge__count" :fill="colors.accent" text-anchor="middle" x="32" y="63">{{ threshold }}</text>

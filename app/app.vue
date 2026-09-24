@@ -37,6 +37,7 @@ useHead({
     <div class="app-shell">
         <NuxtRouteAnnouncer />
         <NuxtPage />
+        <AchievementToast />
     </div>
 </template>
 
