@@ -274,6 +274,19 @@ async function handlePick(candidate: DrawnPlayer): Promise<void> {
     }, revealFlavor.value ? 1100 : 500);
 }
 
+// Spins the dice icon for the duration of the reroll's network round trip.
+// Tied to isDrawing rather than isScrambling: drawForSlot() (which useReroll
+// calls) leaves offeredPlayers untouched on a failed fetch, so the
+// candidates watcher below never re-fires and isScrambling never flips —
+// isDrawing always resolves to false exactly once, success or not.
+const rerollSpinning = ref(false);
+
+watch(isDrawing, (drawing) => {
+    if (!drawing) {
+        rerollSpinning.value = false;
+    }
+});
+
 async function handleReroll(): Promise<void> {
     // useReroll() itself also no-ops once rerollsLeft is 0, but aria-disabled
     // (unlike the native disabled attribute) doesn't block the click at the
@@ -283,6 +296,7 @@ async function handleReroll(): Promise<void> {
     }
 
     pickError.value = false;
+    rerollSpinning.value = true;
     await useReroll();
 }
 
@@ -346,10 +360,19 @@ function handleBackdropClick(event: MouseEvent): void {
         <button
             v-if="!showResult"
             class="player-choice__reroll"
+            :class="{ 'player-choice__reroll--rolling': rerollSpinning }"
             :aria-disabled="rerollsLeft <= 0 || revealing || isDrawing || isScrambling"
             type="button"
             @click="handleReroll"
         >
+            <svg aria-hidden="true" class="player-choice__dice" fill="none" height="18" viewBox="0 0 24 24" width="18">
+                <rect height="18" rx="4" stroke="currentColor" stroke-width="2" width="18" x="3" y="3" />
+                <circle cx="8" cy="8" fill="currentColor" r="1.4" />
+                <circle cx="16" cy="8" fill="currentColor" r="1.4" />
+                <circle cx="12" cy="12" fill="currentColor" r="1.4" />
+                <circle cx="8" cy="16" fill="currentColor" r="1.4" />
+                <circle cx="16" cy="16" fill="currentColor" r="1.4" />
+            </svg>
             Reroll ({{ rerollsLeft }} left)
         </button>
     </dialog>
@@ -574,21 +597,64 @@ function handleBackdropClick(event: MouseEvent): void {
     margin: 0;
 }
 
+// A bordered pill rather than a plain underlined text link — gives the dice
+// icon something to sit in and makes the reroll read as a distinct, tappable
+// action rather than incidental fine print.
 .player-choice__reroll {
-    background: none;
-    border: none;
-    color: color-mix(in srgb, var(--color-foreground) 70%, transparent);
+    align-items: center;
+    background-color: color-mix(in srgb, var(--color-foreground) 6%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-foreground) 15%, transparent);
+    border-radius: 999px;
+    color: color-mix(in srgb, var(--color-foreground) 80%, transparent);
     cursor: pointer;
+    display: flex;
     font-size: 0.8rem;
+    font-weight: 600;
+    gap: 0.45rem;
     margin: 0.5rem 0 0;
-    padding: 0.5rem 0;
-    text-decoration: underline;
+    padding: 0.5rem 1rem;
+    transition: border-color 0.15s ease;
+}
+
+.player-choice__reroll:hover,
+.player-choice__reroll:focus-visible {
+    border-color: var(--color-primary);
 }
 
 .player-choice__reroll[aria-disabled='true'] {
     cursor: default;
     opacity: 0.5;
     pointer-events: none;
-    text-decoration: none;
+}
+
+.player-choice__dice {
+    color: var(--color-primary);
+    flex-shrink: 0;
+}
+
+// A full tumble (spin + a punch of scale at the midpoint) while a reroll's
+// request is in flight — the dice icon's one moment of real personality.
+.player-choice__reroll--rolling .player-choice__dice {
+    animation: player-choice-dice-roll 0.5s ease-in-out infinite;
+}
+
+@keyframes player-choice-dice-roll {
+    0% {
+        transform: rotate(0deg) scale(1);
+    }
+
+    50% {
+        transform: rotate(180deg) scale(1.2);
+    }
+
+    100% {
+        transform: rotate(360deg) scale(1);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .player-choice__reroll--rolling .player-choice__dice {
+        animation: none;
+    }
 }
 </style>
