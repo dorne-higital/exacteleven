@@ -22,7 +22,7 @@ export function usePageSeoMeta(options: PageSeoMetaOptions): void {
         ogImage: '/og-image.png',
         ogImageWidth: 1200,
         ogImageHeight: 630,
-        ogImageAlt: 'Exact XI logo on a dark background',
+        ogImageAlt: 'Exact XI logo on cream paper background',
         twitterCard: 'summary_large_image',
         twitterTitle: options.twitterTitle,
         twitterDescription: options.twitterDescription,
