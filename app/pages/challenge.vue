@@ -93,16 +93,9 @@ function openStats(): void {
     trackEvent('view_stats', { source: 'challenge' });
 }
 
-useSeoMeta({
+usePageSeoMeta({
     title: 'Custom Challenge — Exact XI',
     description: 'A friend-built board — a chosen formation, objective, and a couple of players already locked in. Real top-flight players since 2016/17.',
-    ogTitle: 'Custom Challenge — Exact XI',
-    ogImage: '/og-image.png',
-    ogImageWidth: 1200,
-    ogImageHeight: 630,
-    ogImageAlt: 'Exact XI logo on a dark background',
-    twitterCard: 'summary_large_image',
-    twitterImage: '/og-image.png',
 });
 </script>
 

@@ -34,7 +34,11 @@ export default defineNuxtConfig({
         // --font-display custom properties (app.vue), never a literal
         // font-family declaration — the module's default CSS scan looks for
         // literal font-family values and would find none, silently skipping
-        // @font-face injection entirely.
+        // @font-face injection entirely. Because that failure mode is silent,
+        // @nuxt/fonts is pinned to an exact version in package.json rather
+        // than left on a caret range — a minor bump changing this
+        // experimental flag's behavior wouldn't otherwise be caught until
+        // someone noticed system-font fallback in production.
         experimental: {
             processCSSVariables: true,
         },

@@ -35,19 +35,13 @@ function openCreateChallenge(): void {
     trackEvent('view_create_challenge', { source: 'home' });
 }
 
-useSeoMeta({
+usePageSeoMeta({
     title: 'Exact XI — pick a formation, guess the exact score',
     description: 'A line-up guessing game for England\'s top-flight football since 2016/17 — pick a formation and land your goals + assists total exactly on target.',
     ogTitle: 'Exact XI',
     ogDescription: 'Pick a formation, fill the XI, and try to land on the exact score — real top-flight players since 2016/17.',
-    ogImage: '/og-image.png',
-    ogImageWidth: 1200,
-    ogImageHeight: 630,
-    ogImageAlt: 'Exact XI logo on a dark background',
-    twitterCard: 'summary_large_image',
     twitterTitle: 'Exact XI',
     twitterDescription: 'Pick a formation, fill the XI, and try to land on the exact score.',
-    twitterImage: '/og-image.png',
 });
 </script>
 

@@ -1,14 +1,7 @@
 <script setup lang="ts">
-useSeoMeta({
+usePageSeoMeta({
     title: 'How to play — Exact XI',
     description: 'The rules of Exact XI in plain language: formations, hidden stats, busts, the win window, rerolls and repeats.',
-    ogTitle: 'How to play — Exact XI',
-    ogImage: '/og-image.png',
-    ogImageWidth: 1200,
-    ogImageHeight: 630,
-    ogImageAlt: 'Exact XI logo on a dark background',
-    twitterCard: 'summary_large_image',
-    twitterImage: '/og-image.png',
 });
 </script>
 

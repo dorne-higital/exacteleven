@@ -1,12 +1,12 @@
 import type { DrawnPlayer, ObjectiveKind, Player, PositionGroup } from '../../shared/types';
 import { signPlayerToken } from '../utils/draw-token';
+import { CANDIDATES_PER_DRAW } from '../utils/game-constants';
 import { parseExclude } from '../utils/parse-exclude';
 import { getPlayersByPosition } from '../utils/players';
 import { buildViabilityCheck } from '../utils/win-odds';
 
 const VALID_POSITIONS = new Set(['GK', 'DEF', 'MID', 'FWD']);
 const VALID_OBJECTIVE_KINDS = new Set(['exact', 'over', 'under', 'allUnder']);
-const CANDIDATES_PER_DRAW = 3;
 const GAME_ID_PATTERN = /^[\w-]{8,64}$/;
 // This slot plus every OTHER remaining one is at most 11 (a real formation's
 // ceiling) — a generous cap against a malformed/hostile query, not a tight fit.

@@ -1,15 +1,5 @@
 # Todos
 
-## Small and quick fixes
-
-- When modals open, you have to find the 'X' to close, need it so even ifyou clcik away from the modal this closes
-
-    **Feasibility: Easy. Timescale: under an hour.**
-    Both dialogs in the app (`CenteredDialog.vue` and `PlayerChoiceDialog.vue`) are native `<dialog>` elements opened with `showModal()`. Clicking the backdrop area sends a click event whose `target` is the `<dialog>` element itself (not a child), so the standard fix is a one-line `@click` handler on the `<dialog>` that checks `event.target === dialogRef.value` and calls `.close()` if so.
-    - Fixing `CenteredDialog.vue` covers `InfoDialog`, `StatsDialog`, and `CreateChallengeDialog` for free, since they're all built on it.
-    - `PlayerChoiceDialog.vue` (the position-pick modal) uses its own separate `<dialog>`, so it needs the identical fix added a second time.
-    - Worth a quick call: for `PlayerChoiceDialog` specifically, clicking away mid-pick discards that in-progress choice — probably fine (same as pressing Esc already would), but flagging in case you'd rather that one modal stay pick-only.
-
 ## Medium
 
 - Daily & challenge make it seem like the main game is not part of it. Can we put the main game behind a full width block like them, with the same design (diff icon behind), which then loads a new play screen with the formation picker, so home will have full width [Play game], then below 2 x 50% [Daily challenge][Challeneg friend]

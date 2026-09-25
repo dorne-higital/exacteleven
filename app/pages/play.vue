@@ -58,18 +58,11 @@ function openStats(): void {
     trackEvent('view_stats', { source: 'play', formation: formationCode.value });
 }
 
-useSeoMeta({
+usePageSeoMeta({
     title: () => (formation.value ? `${formation.value.code} formation — Exact XI` : 'Exact XI'),
     description: () => (formation.value
         ? `Fill the ${formation.value.code} XI and try to land your total goals plus assists exactly on ${formation.value.target} — real top-flight players since 2016/17.`
         : 'A line-up guessing game for England\'s top-flight football since 2016/17.'),
-    ogTitle: () => (formation.value ? `${formation.value.code} formation — Exact XI` : 'Exact XI'),
-    ogImage: '/og-image.png',
-    ogImageWidth: 1200,
-    ogImageHeight: 630,
-    ogImageAlt: 'Exact XI logo on a dark background',
-    twitterCard: 'summary_large_image',
-    twitterImage: '/og-image.png',
 });
 </script>
 

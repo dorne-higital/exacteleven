@@ -1,12 +1,12 @@
 import type { HintResult, ObjectiveKind, PositionGroup } from '../../shared/types';
 import { verifyPlayerToken } from '../utils/draw-token';
+import { CANDIDATES_PER_DRAW } from '../utils/game-constants';
 import { parseExclude } from '../utils/parse-exclude';
 import { getPlayerById } from '../utils/players';
 import { computeWinOdds } from '../utils/win-odds';
 
 const VALID_POSITIONS = new Set(['GK', 'DEF', 'MID', 'FWD']);
 const VALID_OBJECTIVE_KINDS = new Set(['exact', 'over', 'under', 'allUnder']);
-const CANDIDATES_PER_DRAW = 3;
 // A real formation fields at most 11 slots total, so 10 remaining (every
 // slot but the one being hinted on) is already the ceiling — a generous cap
 // against a malformed/hostile body, not a tight fit.

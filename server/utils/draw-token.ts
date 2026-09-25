@@ -9,8 +9,10 @@
 // stockpiled indefinitely outside it; it isn't a substitute for the
 // separately-tracked rate limiting needed to stop someone from farming many
 // short-lived tokens across many fake game ids in quick succession.
-// Uses the Web Crypto API rather than Node's `crypto` module so it also runs
-// on the Cloudflare Workers runtime this project targets in production.
+// Uses the Web Crypto API rather than Node's `crypto` module so it doesn't
+// depend on a Node-specific import — this runs the same in `yarn dev` and in
+// the Netlify Functions runtime this project deploys to in production (see
+// `nitro.preset` in nuxt.config.ts).
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 const TOKEN_TTL_MS = 5 * 60 * 1000;

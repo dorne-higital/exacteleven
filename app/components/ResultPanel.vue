@@ -183,7 +183,11 @@ watch(outcome, (value) => {
 
 // A fixed, non-random spread (not Math.random()) — purely cosmetic values
 // like this still don't need real randomness, and staying deterministic
-// costs nothing here.
+// costs nothing here. Only the first entry is a theme token on purpose — a
+// celebration needs a multi-color spread to read as confetti at all, which
+// the app's small token set can't supply on its own, so the rest are fixed
+// hexes chosen to sit well against both themes (same reasoning as the medal
+// colors in AchievementBadge.vue).
 const CONFETTI_COLORS = ['var(--color-primary)', '#ffc400', '#ff8a3d', '#4da6ff'];
 const CONFETTI_COUNT = 18;
 

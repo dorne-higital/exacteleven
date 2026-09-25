@@ -73,16 +73,9 @@ function openStats(): void {
     trackEvent('view_stats', { source: 'daily' });
 }
 
-useSeoMeta({
+usePageSeoMeta({
     title: 'Daily Challenge — Exact XI',
     description: 'A new twist every day — preset formation, a couple of players already locked in, and a rotating objective. Real top-flight players since 2016/17.',
-    ogTitle: 'Daily Challenge — Exact XI',
-    ogImage: '/og-image.png',
-    ogImageWidth: 1200,
-    ogImageHeight: 630,
-    ogImageAlt: 'Exact XI logo on a dark background',
-    twitterCard: 'summary_large_image',
-    twitterImage: '/og-image.png',
 });
 </script>
 

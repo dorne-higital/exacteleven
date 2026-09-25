@@ -6,16 +6,9 @@ function selectFormation(formationCode: string): void {
     trackEvent('select_formation', { formation: formationCode });
 }
 
-useSeoMeta({
+usePageSeoMeta({
     title: 'Pick a formation — Exact XI',
     description: 'Choose a formation to set your target — its digits become the goals plus assists total you need to land exactly.',
-    ogTitle: 'Pick a formation — Exact XI',
-    ogImage: '/og-image.png',
-    ogImageWidth: 1200,
-    ogImageHeight: 630,
-    ogImageAlt: 'Exact XI logo on a dark background',
-    twitterCard: 'summary_large_image',
-    twitterImage: '/og-image.png',
 });
 </script>
 

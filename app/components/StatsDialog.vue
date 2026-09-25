@@ -81,23 +81,42 @@ function toSection(key: string, title: string, achievements: AchievementProgress
     return { key, title, achievements, next: achievements.find((progress) => !progress.unlocked) ?? null };
 }
 
-const achievementSections = computed<AchievementSection[]>(() => {
+// Featured up front: the three categories every player accrues just by
+// playing. Tier and formation breakdowns are real badges too, but at 5 tiers
+// x9 thresholds + 7 formations x9 thresholds they're 108 of the 134 total —
+// mostly locked, mostly noise for a new or casual player — so they sit
+// behind a single disclosure instead of diluting the featured three.
+const featuredSections = computed<AchievementSection[]>(() => {
+    const progress = getAchievementProgress(stats.value);
+    const byCategory = (category: AchievementCategory) => progress.filter((p) => p.def.category === category);
+
+    return [
+        toSection('games-played', 'Games Played', byCategory('gamesPlayed')),
+        toSection('games-won', 'Exact Wins', byCategory('gamesWon')),
+        toSection('daily-streak', 'Daily Streak', byCategory('dailyStreak')),
+    ];
+});
+
+const breakdownSections = computed<AchievementSection[]>(() => {
     const progress = getAchievementProgress(stats.value);
     const byCategory = (category: AchievementCategory, subKind?: string) => progress.filter((p) => (
         p.def.category === category && (subKind === undefined || p.def.subKind === subKind)
     ));
 
     return [
-        toSection('games-played', 'Games Played', byCategory('gamesPlayed')),
-        toSection('games-won', 'Exact Wins', byCategory('gamesWon')),
         ...TIERS.map((tier) => toSection(`tier-${tier.key}`, tier.label, byCategory('tier', tier.key))),
         ...formations.map((formation) => toSection(`formation-${formation.code}`, `${formation.code} Wins`, byCategory('formationWin', formation.code))),
-        toSection('daily-streak', 'Daily Streak', byCategory('dailyStreak')),
     ];
 });
 
 const achievementSummary = computed(() => {
-    const all = achievementSections.value.flatMap((section) => section.achievements);
+    const all = [...featuredSections.value, ...breakdownSections.value].flatMap((section) => section.achievements);
+
+    return { unlocked: all.filter((progress) => progress.unlocked).length, total: all.length };
+});
+
+const breakdownSummary = computed(() => {
+    const all = breakdownSections.value.flatMap((section) => section.achievements);
 
     return { unlocked: all.filter((progress) => progress.unlocked).length, total: all.length };
 });
@@ -208,7 +227,7 @@ function handleReset(): void {
                 reach them, so you can always see what's next.
             </p>
 
-            <div v-for="section in achievementSections" :key="section.key" class="achievements-tab__section">
+            <div v-for="section in featuredSections" :key="section.key" class="achievements-tab__section">
                 <p class="achievements-tab__section-title">
                     {{ section.title }}
                     <span v-if="section.next" class="achievements-tab__section-next">
@@ -232,6 +251,36 @@ function handleReset(): void {
                     </div>
                 </div>
             </div>
+
+            <details class="achievements-tab__breakdown">
+                <summary class="achievements-tab__breakdown-summary">
+                    By tier &amp; formation ({{ breakdownSummary.unlocked }}/{{ breakdownSummary.total }})
+                </summary>
+                <div v-for="section in breakdownSections" :key="section.key" class="achievements-tab__section">
+                    <p class="achievements-tab__section-title">
+                        {{ section.title }}
+                        <span v-if="section.next" class="achievements-tab__section-next">
+                            {{ section.next.current }}/{{ section.next.def.threshold }}
+                        </span>
+                    </p>
+                    <div class="achievements-tab__grid">
+                        <div
+                            v-for="progress in section.achievements"
+                            :key="progress.def.id"
+                            class="achievements-tab__badge"
+                            :title="badgeLabel(progress)"
+                        >
+                            <AchievementBadge
+                                :category="progress.def.category"
+                                :rank="progress.def.rank"
+                                :threshold="progress.def.threshold"
+                                :unlocked="progress.unlocked"
+                            />
+                            <span class="achievements-tab__badge-sr">{{ badgeLabel(progress) }}</span>
+                        </div>
+                    </div>
+                </div>
+            </details>
         </div>
     </CenteredDialog>
 </template>
@@ -444,6 +493,33 @@ function handleReset(): void {
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
+}
+
+.achievements-tab__breakdown {
+    border-top: 1px solid color-mix(in srgb, var(--color-foreground) 12%, transparent);
+    padding-top: 1rem;
+}
+
+.achievements-tab__breakdown[open] .achievements-tab__breakdown-summary {
+    margin-bottom: 1rem;
+}
+
+.achievements-tab__breakdown-summary {
+    color: color-mix(in srgb, var(--color-foreground) 70%, transparent);
+    cursor: pointer;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.achievements-tab__breakdown-summary:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+}
+
+.achievements-tab__breakdown .achievements-tab__section + .achievements-tab__section {
+    margin-top: 1.1rem;
 }
 
 .achievements-tab__badge {

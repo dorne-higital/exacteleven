@@ -34,6 +34,9 @@ const FLAVOR_LINES: Record<RevealMood, string[]> = {
         'That one was never coming back.',
         'Over the line. Game over.',
         "Ouch. That's a wrap.",
+        "Full-time whistle. That's your lot.",
+        'Sent off — no arguing with VAR on this one.',
+        'Straight past the post and into row Z.',
     ],
     win: [
         'Nailed it. On the nose.',
@@ -41,6 +44,9 @@ const FLAVOR_LINES: Record<RevealMood, string[]> = {
         "That's exactly what we needed.",
         'Perfect landing.',
         'Right on target.',
+        'Top corner. Textbook.',
+        'Straight through the eye of the needle.',
+        'Not a stat wasted.',
     ],
     close: [
         "That's cutting it fine.",
@@ -48,11 +54,31 @@ const FLAVOR_LINES: Record<RevealMood, string[]> = {
         'One more like that and it\'s over.',
         'Tightrope stuff.',
         'No room left to breathe.',
+        'Squeaked that one past the keeper.',
+        'Somehow still standing.',
+        'Fine margins. Very fine.',
     ],
 };
+
+// Avoids showing the same line twice in a row for a given mood — a session-
+// only memory (module-level, resets on reload) is enough to kill the most
+// noticeable repeats without needing to persist anything.
+const lastShownIndex: Partial<Record<RevealMood, number>> = {};
 
 export function pickFlavorLine(mood: RevealMood): string {
     const lines = FLAVOR_LINES[mood];
 
-    return lines[Math.floor(Math.random() * lines.length)]!;
+    if (lines.length === 1) {
+        return lines[0]!;
+    }
+
+    let index = Math.floor(Math.random() * lines.length);
+
+    while (index === lastShownIndex[mood]) {
+        index = Math.floor(Math.random() * lines.length);
+    }
+
+    lastShownIndex[mood] = index;
+
+    return lines[index]!;
 }
