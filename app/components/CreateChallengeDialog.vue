@@ -328,8 +328,8 @@ watch(open, (isOpen) => {
 .create-challenge__preview-list {
     display: flex;
     flex-direction: column;
-    gap: 0.3rem;
     font-size: 0.85rem;
+    gap: 0.3rem;
     list-style: none;
     margin: 0 0 1rem;
     padding: 0;

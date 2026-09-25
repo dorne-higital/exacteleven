@@ -4,6 +4,7 @@ import { trackEvent } from '../utils/analytics';
 import { getFormation } from '../utils/formations';
 
 const { state, isDrawing, pendingSlotId, drawError, startDailyGame, resumeDailyGame, openSlot } = useGame();
+const { stats } = useStats();
 
 // The puzzle rotates on the BROWSER's local calendar date (see
 // server/api/daily.get.ts's comment on that trust boundary) — never
@@ -125,6 +126,8 @@ usePageSeoMeta({
                 </div>
 
                 <PlayerChoiceDialog v-if="state.activeSlotId" />
+
+                <DailyStreakStrip :results="stats.dailyResults" :streak="stats.dailyStreak" />
             </template>
 
             <p v-else-if="loadError" class="daily__error">

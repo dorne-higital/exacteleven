@@ -10,6 +10,14 @@ export interface BestResult {
     formationCode: FormationCode;
 }
 
+// One row of DailyStreakStrip.vue's recent-form log (daily.vue and the
+// homepage's Daily Challenge card).
+export interface DailyResultEntry {
+    /** YYYY-MM-DD, matching GameStats.lastDailyResultDate's format. */
+    date: string;
+    status: 'won' | 'bust' | 'lost';
+}
+
 export interface GameStats {
     gamesPlayed: number;
     wins: number;
@@ -33,4 +41,6 @@ export interface GameStats {
     dailyPlays: number;
     /** The YYYY-MM-DD of the last completed Daily Challenge attempt — used both to detect a consecutive-day streak and to guard against a same-day replay (e.g. via "Play again") padding the stats twice. */
     lastDailyResultDate: string | null;
+    /** The most recent Daily Challenge results (oldest first), capped to a rolling window — feeds StatsDialog's Season Table. */
+    dailyResults: DailyResultEntry[];
 }

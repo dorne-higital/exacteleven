@@ -42,8 +42,12 @@ describe('getObjectiveResult', () => {
     describe('over', () => {
         const objective: Objective = { kind: 'over', value: 10, label: '' };
 
-        it('never busts, however high the running total goes', () => {
-            expect(getObjectiveResult(objective, [player(20, 0)], TOTAL_SLOTS).status).toBe('playing');
+        it('wins immediately once the running total clears the value, without waiting for the remaining slots', () => {
+            expect(getObjectiveResult(objective, [player(20, 0)], TOTAL_SLOTS).status).toBe('won');
+        });
+
+        it('stays playing while at or under the value with slots still open', () => {
+            expect(getObjectiveResult(objective, [player(5, 0), player(5, 0)], TOTAL_SLOTS).status).toBe('playing');
         });
 
         it('wins once full and over the value', () => {

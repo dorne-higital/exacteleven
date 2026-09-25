@@ -1,6 +1,6 @@
 import type { FormationCode, GameStatus, ResultTier } from '../../shared/types';
 import type { AchievementDef } from '../utils/achievements';
-import type { BestResult, GameStats } from '../utils/stats-types';
+import type { BestResult, DailyResultEntry, GameStats } from '../utils/stats-types';
 import type { Outcome } from '../utils/scoring';
 import { dayIndexForDate } from '#shared/daily';
 import { backfillSeenAchievements, diffNewlyUnlocked, readSeenAchievementIds, writeSeenAchievementIds } from '../utils/achievement-notifications';
@@ -14,6 +14,13 @@ const COUNT_KEYS = ['gamesPlayed', 'wins', 'championsLeague', 'europaLeague', 'm
 const DAILY_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 const VALID_OUTCOMES: Outcome[] = ['champion', 'championsLeague', 'europaLeague', 'midTable', 'avoidedRelegation', 'relegated'];
+
+const VALID_DAILY_STATUSES = ['won', 'bust', 'lost'] as const;
+
+// Matches DailyStreakStrip.vue's RESULT_CHIP_LIMIT — nothing currently reads
+// further back than the last 10, so the log is capped at exactly that rather
+// than storing history nothing displays.
+const DAILY_RESULTS_LOG_LIMIT = 10;
 
 function isNonNegativeInt(value: unknown): value is number {
     return typeof value === 'number' && Number.isInteger(value) && value >= 0;
@@ -74,6 +81,17 @@ function sanitizeStats(parsed: unknown): Partial<GameStats> {
         clean.lastDailyResultDate = null;
     }
 
+    if (Array.isArray(raw.dailyResults)) {
+        clean.dailyResults = raw.dailyResults
+            .filter((entry): entry is DailyResultEntry => (
+                typeof entry === 'object' && entry !== null
+                && typeof (entry as Record<string, unknown>).date === 'string'
+                && DAILY_DATE_PATTERN.test((entry as Record<string, unknown>).date as string)
+                && VALID_DAILY_STATUSES.includes((entry as Record<string, unknown>).status as typeof VALID_DAILY_STATUSES[number])
+            ))
+            .slice(-DAILY_RESULTS_LOG_LIMIT);
+    }
+
     return clean;
 }
 
@@ -99,6 +117,7 @@ function emptyStats(): GameStats {
         dailyWins: 0,
         dailyPlays: 0,
         lastDailyResultDate: null,
+        dailyResults: [],
     };
 }
 
@@ -236,6 +255,10 @@ export function useStats() {
         const isConsecutiveDay = current.lastDailyResultDate !== null
             && dayIndexForDate(date) - dayIndexForDate(current.lastDailyResultDate) === 1;
         const nextStreak = isWin ? (isConsecutiveDay ? current.dailyStreak + 1 : 1) : 0;
+        // 'lost' is Daily's binary non-win outcome (see shared/types.ts) —
+        // status is only ever won/bust/lost here, never a classic-mode tier.
+        const dailyStatus: DailyResultEntry['status'] = status === 'won' ? 'won' : status === 'bust' ? 'bust' : 'lost';
+        const entry: DailyResultEntry = { date, status: dailyStatus };
 
         const next: GameStats = {
             ...current,
@@ -246,6 +269,7 @@ export function useStats() {
             // streak, so a badge can't re-lock once a streak breaks.
             bestDailyStreak: Math.max(current.bestDailyStreak, nextStreak),
             lastDailyResultDate: date,
+            dailyResults: [...current.dailyResults, entry].slice(-DAILY_RESULTS_LOG_LIMIT),
         };
 
         queueNewlyUnlocked(current, next);

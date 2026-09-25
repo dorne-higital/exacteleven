@@ -25,13 +25,16 @@ export function getObjectiveResult(objective: Objective, pickedPlayers: Player[]
         }
 
         case 'over': {
-            // No ceiling to bust against — you can only find out once every
-            // slot is filled whether the total cleared the bar.
-            if (filled < totalSlots) {
-                return { status: 'playing', tier: null };
+            // No ceiling to bust against, so unlike 'exact' there's nothing
+            // that can end this early as a loss — but clearing the bar can
+            // still end it early as a win, the same way 'under'/'allUnder'
+            // below end early on a bust. No point making the last slot(s) a
+            // formality once the total's already cleared the target.
+            if (total > objective.value) {
+                return { status: 'won', tier: null };
             }
 
-            return { status: total > objective.value ? 'won' : 'lost', tier: null };
+            return { status: filled < totalSlots ? 'playing' : 'lost', tier: null };
         }
 
         case 'under': {

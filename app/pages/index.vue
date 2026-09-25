@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { trackEvent } from '../utils/analytics';
 
+const { stats } = useStats();
+
 const STEPS = [
     { number: '1', title: 'Pick a formation', detail: 'Its digits become your target.' },
     { number: '2', title: 'Fill the XI', detail: '3 hidden-stat players per slot.' },
@@ -88,6 +90,7 @@ usePageSeoMeta({
                     <span class="daily-card__details">
                         <span class="daily-card__title">Daily Challenge</span>
                         <span class="daily-card__detail">A new twist every day.</span>
+                        <DailyStreakStrip compact :results="stats.dailyResults" :streak="stats.dailyStreak" />
                     </span>
                 </NuxtLink>
 
