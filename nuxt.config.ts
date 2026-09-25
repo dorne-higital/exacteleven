@@ -68,9 +68,18 @@ export default defineNuxtConfig({
         // trusts whatever that nonce-trusted script injects (gtm.js itself,
         // then GA4's own script) without a host allowlist. img-src does need
         // it — GTM/GA4 fall back to image-pixel beacons in some cases.
+        // buymeacoffee.com is here for a different reason: script-src already
+        // allows any https: host (plus strict-dynamic), so the BMC widget
+        // script itself loads fine without an entry — but img-src has no
+        // such broad allowance, and the widget loads its own icon/loader
+        // SVGs as plain <img> tags from cdn.buymeacoffee.com, which were
+        // silently CSP-blocked without this (confirmed via a live network
+        // trace: script 200, icon/loader requests failing, host missing from
+        // this exact list — footballdle.co.uk, which has no CSP at all,
+        // never hit this).
         headers: {
             contentSecurityPolicy: {
-                'img-src': ["'self'", 'data:', 'https://www.googletagmanager.com', 'https://www.google-analytics.com'],
+                'img-src': ["'self'", 'data:', 'https://www.googletagmanager.com', 'https://www.google-analytics.com', 'https://cdn.buymeacoffee.com'],
             },
         },
         // Netlify Blobs on an actual Netlify deploy (NETLIFY is a standard

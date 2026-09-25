@@ -33,11 +33,11 @@ useHead({
             'data-cfasync': 'false',
             'data-id': 'dhorne92E',
             'data-description': 'Support Exact XI!',
+            'data-message': '',
             'data-color': '#1f4d3a',
             'data-position': 'Right',
             'data-x_margin': '18',
             'data-y_margin': '18',
-            defer: true,
         },
     ],
     noscript: [
