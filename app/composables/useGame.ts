@@ -1,4 +1,4 @@
-import type { DrawnPlayer, FormationCode, GameSlot, GameState, Objective, Player, RevealResult } from '../../shared/types';
+import type { DrawnPlayer, FormationCode, GameSlot, GameState, HintResult, Objective, Player, RevealResult, WinOdds } from '../../shared/types';
 import { trackEvent } from '../utils/analytics';
 import { getObjectiveResult } from '../utils/daily-scoring';
 import { getFormation } from '../utils/formations';
@@ -22,6 +22,12 @@ export interface ChallengePayload {
 }
 
 const REROLLS_PER_GAME = 1;
+const HINTS_PER_GAME = 1;
+// Early game, the count is an astronomically large, not-very-meaningful
+// number (see shared/types.ts's WinOdds doc comment) — waiting until the
+// picture has actually narrowed down makes it a more informative stat,
+// closer to when it can meaningfully move a player's decision.
+const MIN_FILLED_FOR_WIN_ODDS = 6;
 const GAME_STORAGE_KEY = 'exact-xi-game';
 
 // Persisted to sessionStorage (not localStorage — a stale in-progress game
@@ -68,6 +74,7 @@ function createInitialState(formationCode: FormationCode): GameState {
         slots: formation.slots.map((slot) => ({ ...slot, player: null })),
         offeredPlayerIds: [],
         rerollsLeft: REROLLS_PER_GAME,
+        hintsLeft: HINTS_PER_GAME,
         total: 0,
         status: 'playing',
         tier: null,
@@ -107,6 +114,7 @@ function createObjectivePrefilledState(
         // in a later live draw for one of the remaining slots.
         offeredPlayerIds: prefilledPlayers.map((player) => player.id),
         rerollsLeft: REROLLS_PER_GAME,
+        hintsLeft: HINTS_PER_GAME,
         total: calculateTotal(prefilledPlayers),
         status: 'playing',
         tier: null,
@@ -141,11 +149,62 @@ export function useGame() {
     // Set when a draw request fails outright (network drop, server error) so
     // play.vue can tell the player the tap didn't silently do nothing.
     const drawError = useState<boolean>('exact-xi-draw-error', () => false);
+    // A flavor stat (see shared/types.ts's WinOdds doc comment), refreshed on
+    // every game start/resume and after every completed pick — never on a
+    // reroll alone, since that only reshuffles the current slot's 3
+    // candidates rather than changing what's actually left to fill.
+    const winOdds = useState<WinOdds | null>('exact-xi-win-odds', () => null);
+
+    // Non-critical and purely illustrative — a failed fetch just leaves
+    // whatever was last shown (or nothing) rather than surfacing an error
+    // state for it. Client-only: this fires from startGame() et al., which
+    // also run during SSR (see play.vue's comment on why), and re-running it
+    // there would just be discarded work once the client corrects the state.
+    async function refreshWinOdds(): Promise<void> {
+        if (!import.meta.client) {
+            return;
+        }
+
+        const game = state.value;
+
+        if (!game || game.status !== 'playing') {
+            winOdds.value = null;
+
+            return;
+        }
+
+        const remainingSlots = game.slots.filter((slot) => !slot.player);
+        const filledCount = game.slots.length - remainingSlots.length;
+
+        if (remainingSlots.length === 0 || filledCount < MIN_FILLED_FOR_WIN_ODDS) {
+            winOdds.value = null;
+
+            return;
+        }
+
+        const remaining = remainingSlots.map((slot) => slot.group);
+        const objective = game.objective ?? { kind: 'exact' as const, value: game.target, label: 'Target' };
+
+        try {
+            winOdds.value = await $fetch<WinOdds>('/api/win-odds', {
+                query: {
+                    remaining: remaining.join(','),
+                    exclude: game.offeredPlayerIds.join(','),
+                    objectiveKind: objective.kind,
+                    objectiveValue: objective.value,
+                    total: game.total,
+                },
+            });
+        } catch {
+            // See doc comment above — deliberately silent.
+        }
+    }
 
     function startGame(formationCode: FormationCode): void {
         state.value = createInitialState(formationCode);
         writePersistedGame(state.value);
         trackEvent('game_start', { formation: formationCode, target: state.value.target });
+        void refreshWinOdds();
     }
 
     function startDailyGame(payload: DailyChallengePayload): void {
@@ -156,6 +215,7 @@ export function useGame() {
             formation: payload.formationCode,
             objective: payload.objective.kind,
         });
+        void refreshWinOdds();
     }
 
     // Same restore-on-refresh pattern as resumeGame, but matched on the
@@ -170,6 +230,7 @@ export function useGame() {
 
         state.value = persisted;
         trackEvent('daily_resume', { date });
+        void refreshWinOdds();
 
         return true;
     }
@@ -181,6 +242,7 @@ export function useGame() {
         state.value = createChallengeState(payload, challengeKey);
         writePersistedGame(state.value);
         trackEvent('challenge_start', { formation: payload.formationCode, objective: payload.objective.kind });
+        void refreshWinOdds();
     }
 
     function resumeChallengeGame(challengeKey: string): boolean {
@@ -192,6 +254,7 @@ export function useGame() {
 
         state.value = persisted;
         trackEvent('challenge_resume');
+        void refreshWinOdds();
 
         return true;
     }
@@ -209,6 +272,7 @@ export function useGame() {
 
         state.value = persisted;
         trackEvent('game_resume', { formation: formationCode });
+        void refreshWinOdds();
 
         return true;
     }
@@ -233,9 +297,26 @@ export function useGame() {
         pendingSlotId.value = slotId;
         drawError.value = false;
 
+        // Every other still-open slot (this one's own outcome is exactly
+        // what's being drawn) — lets /api/draw guarantee at least one of the
+        // 3 offered candidates keeps the game genuinely winnable, rather
+        // than leaving that purely to chance.
+        const otherRemaining = game.slots
+            .filter((candidate) => !candidate.player && candidate.id !== slotId)
+            .map((candidate) => candidate.group);
+        const objective = game.objective ?? { kind: 'exact' as const, value: game.target, label: 'Target' };
+
         try {
             const candidates = await $fetch<DrawnPlayer[]>('/api/draw', {
-                query: { position: slot.group, exclude: game.offeredPlayerIds.join(','), gameId: game.gameId },
+                query: {
+                    position: slot.group,
+                    exclude: game.offeredPlayerIds.join(','),
+                    gameId: game.gameId,
+                    remaining: otherRemaining.join(','),
+                    objectiveKind: objective.kind,
+                    objectiveValue: objective.value,
+                    total: game.total,
+                },
             });
 
             game.activeSlotId = slotId;
@@ -293,6 +374,57 @@ export function useGame() {
         await drawForSlot(game.activeSlotId);
 
         return true;
+    }
+
+    // One hint per game — recommends whichever of the currently-offered
+    // candidates leaves the most ways to still win, via the same server-side
+    // odds math winOdds itself uses (the client never sees goals/assists, so
+    // this can't be computed locally). Unlike useReroll, only consumed on a
+    // successful response — a network drop shouldn't burn one of only 2 uses
+    // for nothing learned.
+    async function useHint(): Promise<string | null> {
+        const game = state.value;
+
+        if (!game || game.status !== 'playing' || game.hintsLeft <= 0 || !game.activeSlotId || isDrawing.value) {
+            return null;
+        }
+
+        const slot = findSlot(game, game.activeSlotId);
+
+        if (!slot || slot.player || game.offeredPlayers.length === 0) {
+            return null;
+        }
+
+        const remaining = game.slots
+            .filter((candidate) => !candidate.player && candidate.id !== game.activeSlotId)
+            .map((candidate) => candidate.group);
+
+        const objective = game.objective ?? { kind: 'exact' as const, value: game.target, label: 'Target' };
+
+        let result: HintResult;
+
+        try {
+            result = await $fetch<HintResult>('/api/hint', {
+                method: 'POST',
+                body: {
+                    gameId: game.gameId,
+                    tokens: game.offeredPlayers.map((candidate) => candidate.token),
+                    remaining: remaining.join(','),
+                    exclude: game.offeredPlayerIds.join(','),
+                    objectiveKind: objective.kind,
+                    objectiveValue: objective.value,
+                    total: game.total,
+                },
+            });
+        } catch {
+            return null;
+        }
+
+        game.hintsLeft -= 1;
+        trackEvent('hint_used', { formation: game.formationCode });
+        writePersistedGame(game);
+
+        return result.recommendedId;
     }
 
     async function pickPlayer(chosen: DrawnPlayer): Promise<RevealResult | null> {
@@ -395,6 +527,7 @@ export function useGame() {
         }
 
         writePersistedGame(game);
+        void refreshWinOdds();
 
         return result;
     }
@@ -421,6 +554,8 @@ export function useGame() {
         isDrawing,
         pendingSlotId,
         drawError,
+        winOdds,
+        refreshWinOdds,
         startGame,
         resumeGame,
         startDailyGame,
@@ -430,6 +565,7 @@ export function useGame() {
         openSlot,
         pickPlayer,
         useReroll,
+        useHint,
         closeDialog,
         reset,
     };

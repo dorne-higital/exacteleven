@@ -131,6 +131,8 @@ useSeoMeta({
                     :total="state.total"
                 />
 
+                <WinOddsBanner v-if="!gameOver" />
+
                 <ResultPanel v-if="gameOver" />
 
                 <p v-if="drawError" aria-live="polite" class="challenge__draw-error">

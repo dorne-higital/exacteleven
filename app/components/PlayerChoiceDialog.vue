@@ -2,10 +2,16 @@
 import type { DrawnPlayer, PositionGroup } from '../../shared/types';
 import { classifyReveal, pickFlavorLine } from '../utils/reveal-flavor';
 
-const { state, isDrawing, pickPlayer, useReroll, closeDialog } = useGame();
+const { state, isDrawing, pickPlayer, useReroll, useHint, closeDialog } = useGame();
 
 const candidates = computed(() => state.value?.offeredPlayers ?? []);
 const rerollsLeft = computed(() => state.value?.rerollsLeft ?? 0);
+const hintsLeft = computed(() => state.value?.hintsLeft ?? 0);
+// Which currently-offered candidate the last hint recommended, if any —
+// reset whenever the offered candidates change (see the candidates watcher
+// below), since a stale recommendation from a previous draw is meaningless
+// once the options themselves have changed.
+const recommendedId = ref<string | null>(null);
 
 // Player data only tracks the broad GK/DEF/MID/FWD group, not real-world
 // sub-positions — so a "right-back" slot can just as easily offer a
@@ -156,6 +162,7 @@ watch(candidates, (items) => {
     if (items.length > 0) {
         startScramble(items);
         pickedId.value = null;
+        recommendedId.value = null;
     }
 }, { immediate: true });
 
@@ -300,6 +307,25 @@ async function handleReroll(): Promise<void> {
     await useReroll();
 }
 
+const hintLoading = ref(false);
+
+async function handleHint(): Promise<void> {
+    // Also blocks a second tap once a recommendation is already showing for
+    // these exact candidates — re-asking would just spend a hint to learn
+    // the same answer again.
+    if (revealing.value || isDrawing.value || isScrambling.value || hintsLeft.value <= 0 || recommendedId.value) {
+        return;
+    }
+
+    hintLoading.value = true;
+
+    try {
+        recommendedId.value = await useHint();
+    } finally {
+        hintLoading.value = false;
+    }
+}
+
 // Fires on Escape as well as our own programmatic close() above — either way,
 // clear the shared game state so play.vue stops rendering this dialog and
 // (per the native <dialog> contract) focus returns to the slot that opened it.
@@ -333,15 +359,21 @@ function handleBackdropClick(event: MouseEvent): void {
                 <button
                     class="player-choice__option"
                     :aria-disabled="revealing || isDrawing || isScrambling"
-                    :aria-label="settled[index] ? `${candidate.name} — ${eraLabel(candidate)}` : 'Loading option'"
+                    :aria-label="settled[index]
+                        ? `${candidate.name} — ${eraLabel(candidate)}${recommendedId === candidate.id ? ' — Recommended' : ''}`
+                        : 'Loading option'"
                     :class="{
                         'player-choice__option--picked': pickedId === candidate.id,
                         'player-choice__option--scrambling': !settled[index],
+                        'player-choice__option--recommended': recommendedId === candidate.id,
                     }"
                     type="button"
                     @click="handlePick(candidate)"
                 >
-                    <span aria-hidden="true" class="player-choice__name">{{ displayNames[index] }}</span>
+                    <span aria-hidden="true" class="player-choice__name">
+                        {{ displayNames[index] }}
+                        <span v-if="recommendedId === candidate.id" class="player-choice__recommended-badge">Hint</span>
+                    </span>
                     <span aria-hidden="true" class="player-choice__meta">{{ displayMeta[index] }}</span>
                 </button>
             </li>
@@ -357,24 +389,44 @@ function handleBackdropClick(event: MouseEvent): void {
             <p v-if="revealFlavor" aria-hidden="true" class="player-choice__result-flavor">{{ revealFlavor }}</p>
         </div>
 
-        <button
-            v-if="!showResult"
-            class="player-choice__reroll"
-            :class="{ 'player-choice__reroll--rolling': rerollSpinning }"
-            :aria-disabled="rerollsLeft <= 0 || revealing || isDrawing || isScrambling"
-            type="button"
-            @click="handleReroll"
-        >
-            <svg aria-hidden="true" class="player-choice__dice" fill="none" height="18" viewBox="0 0 24 24" width="18">
-                <rect height="18" rx="4" stroke="currentColor" stroke-width="2" width="18" x="3" y="3" />
-                <circle cx="8" cy="8" fill="currentColor" r="1.4" />
-                <circle cx="16" cy="8" fill="currentColor" r="1.4" />
-                <circle cx="12" cy="12" fill="currentColor" r="1.4" />
-                <circle cx="8" cy="16" fill="currentColor" r="1.4" />
-                <circle cx="16" cy="16" fill="currentColor" r="1.4" />
-            </svg>
-            Reroll ({{ rerollsLeft }} left)
-        </button>
+        <div v-if="!showResult" class="player-choice__actions">
+            <button
+                class="player-choice__reroll"
+                :class="{ 'player-choice__reroll--rolling': rerollSpinning }"
+                :aria-disabled="rerollsLeft <= 0 || revealing || isDrawing || isScrambling"
+                type="button"
+                @click="handleReroll"
+            >
+                <svg aria-hidden="true" class="player-choice__dice" fill="none" height="18" viewBox="0 0 24 24" width="18">
+                    <rect height="18" rx="4" stroke="currentColor" stroke-width="2" width="18" x="3" y="3" />
+                    <circle cx="8" cy="8" fill="currentColor" r="1.4" />
+                    <circle cx="16" cy="8" fill="currentColor" r="1.4" />
+                    <circle cx="12" cy="12" fill="currentColor" r="1.4" />
+                    <circle cx="8" cy="16" fill="currentColor" r="1.4" />
+                    <circle cx="16" cy="16" fill="currentColor" r="1.4" />
+                </svg>
+                Reroll ({{ rerollsLeft }} left)
+            </button>
+
+            <button
+                class="player-choice__hint"
+                :class="{ 'player-choice__hint--loading': hintLoading }"
+                :aria-disabled="hintsLeft <= 0 || revealing || isDrawing || isScrambling || !!recommendedId"
+                type="button"
+                @click="handleHint"
+            >
+                <svg aria-hidden="true" class="player-choice__hint-icon" fill="none" height="18" viewBox="0 0 24 24" width="18">
+                    <path
+                        d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3 11.2c.6.4 1 1.1 1 1.8h4c0-.7.4-1.4 1-1.8A6 6 0 0 0 12 3Z"
+                        stroke="currentColor"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                    />
+                </svg>
+                Hint ({{ hintsLeft }} left)
+            </button>
+        </div>
     </dialog>
 </template>
 
@@ -597,10 +649,18 @@ function handleBackdropClick(event: MouseEvent): void {
     margin: 0;
 }
 
-// A bordered pill rather than a plain underlined text link — gives the dice
-// icon something to sit in and makes the reroll read as a distinct, tappable
-// action rather than incidental fine print.
-.player-choice__reroll {
+.player-choice__actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+// A bordered pill rather than a plain underlined text link — gives each
+// icon something to sit in and makes both actions read as distinct,
+// tappable pills rather than incidental fine print. flex: 1 1 0 splits the
+// row evenly between Reroll and Hint.
+.player-choice__reroll,
+.player-choice__hint {
     align-items: center;
     background-color: color-mix(in srgb, var(--color-foreground) 6%, transparent);
     border: 1px solid color-mix(in srgb, var(--color-foreground) 15%, transparent);
@@ -608,26 +668,32 @@ function handleBackdropClick(event: MouseEvent): void {
     color: color-mix(in srgb, var(--color-foreground) 80%, transparent);
     cursor: pointer;
     display: flex;
-    font-size: 0.8rem;
+    flex: 1 1 0;
+    font-size: 0.78rem;
     font-weight: 600;
-    gap: 0.45rem;
-    margin: 0.5rem 0 0;
-    padding: 0.5rem 1rem;
+    gap: 0.4rem;
+    justify-content: center;
+    padding: 0.5rem 0.6rem;
+    text-align: center;
     transition: border-color 0.15s ease;
 }
 
 .player-choice__reroll:hover,
-.player-choice__reroll:focus-visible {
+.player-choice__reroll:focus-visible,
+.player-choice__hint:hover,
+.player-choice__hint:focus-visible {
     border-color: var(--color-primary);
 }
 
-.player-choice__reroll[aria-disabled='true'] {
+.player-choice__reroll[aria-disabled='true'],
+.player-choice__hint[aria-disabled='true'] {
     cursor: default;
     opacity: 0.5;
     pointer-events: none;
 }
 
-.player-choice__dice {
+.player-choice__dice,
+.player-choice__hint-icon {
     color: var(--color-primary);
     flex-shrink: 0;
 }
@@ -652,9 +718,47 @@ function handleBackdropClick(event: MouseEvent): void {
     }
 }
 
+// A gentle pulse while a hint request is in flight — deliberately calmer
+// than the dice tumble above, since this one's a lookup, not a re-roll.
+.player-choice__hint--loading .player-choice__hint-icon {
+    animation: player-choice-hint-pulse 0.8s ease-in-out infinite;
+}
+
+@keyframes player-choice-hint-pulse {
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.3;
+    }
+}
+
 @media (prefers-reduced-motion: reduce) {
-    .player-choice__reroll--rolling .player-choice__dice {
+    .player-choice__reroll--rolling .player-choice__dice,
+    .player-choice__hint--loading .player-choice__hint-icon {
         animation: none;
     }
+}
+
+// Highlights whichever option a hint recommended — primary border on the
+// option itself, plus a small badge next to its name so the reason is
+// explicit, not just an unexplained color change.
+.player-choice__option--recommended {
+    border-color: var(--color-primary);
+}
+
+.player-choice__recommended-badge {
+    background-color: var(--color-primary);
+    border-radius: 999px;
+    color: var(--color-surface);
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    margin-left: 0.4rem;
+    padding: 0.1rem 0.45rem;
+    text-transform: uppercase;
+    vertical-align: middle;
 }
 </style>

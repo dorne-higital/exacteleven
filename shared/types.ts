@@ -84,6 +84,24 @@ export interface RevealResult {
     assists: number;
 }
 
+// A flavor stat, not a certified exact tally: /api/win-odds approximates
+// using plain floating-point counts (not BigInt) since the combinatorial
+// space routinely runs into the billions+ — precision beyond
+// Number.MAX_SAFE_INTEGER is an accepted tradeoff for something purely
+// illustrative, and it keeps the combinatorics fast enough for a
+// request-time computation. See server/utils/win-odds.ts.
+export interface WinOdds {
+    waysToWin: number;
+    totalWays: number;
+}
+
+// /api/hint's response — only ever the id of whichever currently-offered
+// candidate leaves the most ways to win, never any goals/assists (same D2
+// anti-peek boundary as the rest of the draw/reveal flow).
+export interface HintResult {
+    recommendedId: string;
+}
+
 export interface GameState {
     /** Random per-playthrough id, minted client-side at startGame() and bound into every draw token's signature so a token can't be replayed outside the game it was issued for. */
     gameId: string;
@@ -93,6 +111,7 @@ export interface GameState {
     /** Ids of every player shown in any slot's choice dialog so far, picked or not — excluded from later draws (D6). */
     offeredPlayerIds: string[];
     rerollsLeft: number;
+    hintsLeft: number;
     total: number;
     status: GameStatus;
     /** Set only when status === 'finished' — which league-table tier this non-exact, non-bust result landed on. */

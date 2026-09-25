@@ -6,7 +6,7 @@ const route = useRoute();
 const formationCode = computed(() => String(route.query.f ?? ''));
 const formation = computed(() => getFormation(formationCode.value));
 
-const { state, isDrawing, pendingSlotId, drawError, startGame, resumeGame, openSlot } = useGame();
+const { state, isDrawing, pendingSlotId, drawError, startGame, resumeGame, openSlot, refreshWinOdds } = useGame();
 
 // Only (re)start when there's no game yet, or it's for a different formation
 // than this route asks for — revisiting the same formation keeps whatever
@@ -25,6 +25,15 @@ onMounted(() => {
     if (formation.value) {
         resumeGame(formation.value.code);
     }
+
+    // startGame()'s own refreshWinOdds() call above no-ops server-side, and
+    // when the client hydrates into a state that already matches (the
+    // common case), that whole block is skipped client-side too — so a
+    // brand new game's very first odds would otherwise never be fetched.
+    // resumeGame() only refreshes on an actual persisted-game match, not
+    // this "nothing to resume, keep the fresh SSR state" case, so this needs
+    // its own explicit call rather than relying on either of the above.
+    void refreshWinOdds();
 });
 
 const remainingSlots = computed(() => state.value?.slots.filter((slot) => !slot.player).length ?? 0);
@@ -86,6 +95,8 @@ useSeoMeta({
                     :target="state.target"
                     :total="state.total"
                 />
+
+                <WinOddsBanner v-if="!gameOver" />
 
                 <ResultPanel v-if="gameOver" />
 
