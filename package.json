@@ -22,6 +22,7 @@
     "typecheck": "nuxt typecheck && tsc --noEmit -p tsconfig.scripts.json"
   },
   "dependencies": {
+    "@netlify/blobs": "^11.1.1",
     "@nuxt/fonts": "0.14.0",
     "nuxt": "^4.5.2",
     "nuxt-security": "^2.6.0",

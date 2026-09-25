@@ -73,14 +73,23 @@ export default defineNuxtConfig({
                 'img-src': ["'self'", 'data:', 'https://www.googletagmanager.com', 'https://www.google-analytics.com'],
             },
         },
-        // In-memory driver — each Netlify Function invocation can land on a
-        // different, short-lived instance, so this doesn't guarantee shared
-        // state across requests any more than Cloudflare Workers isolates
-        // would. A durable option (e.g. a Netlify Blobs-backed unstorage
-        // driver) can replace this later if real cross-request throttling
-        // on /api/draw and /api/reveal becomes a priority.
+        // Netlify Blobs on an actual Netlify deploy (NETLIFY is a standard
+        // env var Netlify's own build environment sets — see
+        // https://docs.netlify.com/configure-builds/environment-variables/
+        // — read here at BUILD time, since nuxt.config.ts only runs then,
+        // not per-request); the previous per-instance in-memory driver
+        // everywhere else (local dev, CI, any non-Netlify build), since
+        // Blobs has no local emulation without the Netlify CLI and would
+        // throw on every rate-limited request outside a real Netlify
+        // runtime — this keeps `yarn dev`/`yarn build` completely
+        // unaffected. Unverified beyond a build-time sanity check (forcing
+        // NETLIFY=1 locally proves the config path is well-formed): Blobs
+        // itself needs a real deploy to confirm end-to-end, since it can't
+        // be exercised locally.
         rateLimiter: {
-            driver: { name: 'lruCache' },
+            driver: process.env.NETLIFY
+                ? { name: 'netlify-blobs', options: { name: 'rate-limiter' } }
+                : { name: 'lruCache' },
         },
     },
     // OG image generation pulls in a native renderer dependency; leave it
