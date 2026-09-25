@@ -16,7 +16,15 @@
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "esModuleInterop": true,
-    "types": ["node", "vitest/globals"]
+    "types": ["node", "vitest/globals"],
+    // Mirrors vitest.config.ts's own '#shared' alias — needed now that a
+    // composable test (tests/useGame.test.ts) transitively imports
+    // useStats.ts, which imports shared/daily.ts through this Nuxt-style
+    // alias rather than a relative path. No baseUrl needed alongside
+    // paths on this TS version (baseUrl is deprecated for TS 7.0).
+    "paths": {
+      "#shared/*": ["./shared/*"]
+    }
   },
   "include": ["scripts/**/*.ts", "tests/**/*.ts", "shared/**/*.ts"]
 }

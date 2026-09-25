@@ -1825,7 +1825,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@nuxt/fonts@npm:^0.14.0":
+"@nuxt/fonts@npm:0.14.0":
   version: 0.14.0
   resolution: "@nuxt/fonts@npm:0.14.0"
   dependencies:
@@ -5796,7 +5796,7 @@ __metadata:
   resolution: "exacteleven@workspace:."
   dependencies:
     "@nuxt/eslint": "npm:^1.17.0"
-    "@nuxt/fonts": "npm:^0.14.0"
+    "@nuxt/fonts": "npm:0.14.0"
     "@nuxt/test-utils": "npm:^4.3.2"
     "@nuxtjs/seo": "npm:^5.3.16"
     "@stylistic/stylelint-plugin": "npm:^5.3.0"
