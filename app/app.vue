@@ -14,11 +14,30 @@ onMounted(() => {
 // own dashboard, not from here — this file only loads the container itself.
 const { public: { gtmId } } = useRuntimeConfig();
 
+// Buy Me a Coffee's official floating widget — same account/id already
+// live on the footballdle sister site (app/nuxt.config.ts there), ported
+// here rather than reinvented. Unlike the GTM bootstrap above, this is a
+// direct src= script tag (not one that self-inserts via JS), so it needs
+// its own nonce from nuxt-security's SSR pass — same mechanism, just
+// applied to a plain <script> instead of an inline one.
 useHead({
     script: [
         {
             key: 'gtm-init',
             innerHTML: `(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','${gtmId}');`,
+        },
+        {
+            key: 'bmc-widget',
+            src: 'https://cdnjs.buymeacoffee.com/1.0.0/widget.prod.min.js',
+            'data-name': 'BMC-Widget',
+            'data-cfasync': 'false',
+            'data-id': 'dhorne92E',
+            'data-description': 'Support Exact XI!',
+            'data-color': '#1f4d3a',
+            'data-position': 'Right',
+            'data-x_margin': '18',
+            'data-y_margin': '18',
+            defer: true,
         },
     ],
     noscript: [
