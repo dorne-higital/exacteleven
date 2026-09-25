@@ -112,6 +112,32 @@ function handleClick(): void {
     max-width: 3.5rem;
 }
 
+// At this width, 5 evenly-spread slot centres sit as little as ~46.7px apart
+// on the narrowest common phones (320-375px), while the base min-width above
+// holds every slot at a fixed 56px — the two literally overlap by up to 9px,
+// not just "tight." Shrinking tight slots specifically (and their internal
+// text) below this breakpoint keeps every centre-to-centre gap positive
+// again; 4-wide rows aren't affected; they already have slack to spare.
+@media (width <= 400px) {
+    .position-slot--tight {
+        max-width: 2.5rem;
+        min-width: 2.5rem;
+        padding: 0.3rem 0.25rem;
+    }
+
+    .position-slot--tight .position-slot__total {
+        font-size: 0.85rem;
+    }
+
+    .position-slot--tight .position-slot__name {
+        font-size: 0.45rem;
+    }
+
+    .position-slot--tight .position-slot__group {
+        font-size: 0.6rem;
+    }
+}
+
 .position-slot--ended {
     opacity: 0.45;
 }

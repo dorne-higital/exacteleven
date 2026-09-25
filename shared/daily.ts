@@ -8,12 +8,26 @@ const FORMATION_CYCLE: FormationCode[] = ['442', '433', '451', '352', '343', '54
 
 export const OBJECTIVE_KINDS: ObjectiveKind[] = ['exact', 'over', 'under', 'allUnder'];
 
-// Initial guesses, not simulation-tuned like scoring.ts's tier boundaries —
-// revisit once real daily-challenge play data exists. Exported since a
-// custom challenge link (shared/daily.ts's buildObjective) offers the same
-// curated values rather than accepting an arbitrary creator-supplied number.
+// Simulation-tuned against the real player pool (scripts/simulate-daily.ts,
+// random-pick strategy across all 7 formations — see its own comment for
+// why "random" rather than an informed strategy is the right baseline
+// here). Exported since a custom challenge link (shared/daily.ts's
+// buildObjective) offers the same curated values rather than accepting an
+// arbitrary creator-supplied number.
+//
+// OVER_VALUES and ALL_UNDER_VALUES checked out already in a reasonable
+// range comparable to classic mode's own tuned difficulty spread (roughly
+// 1-2% hardest to 20-23% easiest — see formations.ts) and were left as-is:
+// OVER_VALUES -> ~8.1% / 3.8% / 2.1% win, ALL_UNDER_VALUES -> ~20.2% /
+// 32.8% / 44.0% win.
+//
+// UNDER_VALUES were not: the original [180, 220, 260] simulated at ~44.5% /
+// 61.2% / 76.5% win — dramatically easier than anything else in the game,
+// with the loosest value landing a puzzle over 3 in 4 players would win.
+// Replaced with values that simulate to ~5.9% / 19.5% / 34.6% win, back in
+// line with the rest of the spread.
 export const OVER_VALUES = [350, 400, 450];
-export const UNDER_VALUES = [180, 220, 260];
+export const UNDER_VALUES = [100, 130, 160];
 export const ALL_UNDER_VALUES = [40, 50, 60];
 
 const DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;

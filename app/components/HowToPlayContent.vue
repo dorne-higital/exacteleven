@@ -34,8 +34,21 @@
             that missed by the widest margin.
         </li>
         <li>
+            <strong>Daily Challenge and challenge links can set a different objective.</strong> The rules
+            above are classic mode's — always an exact hit. A Daily or challenge board sometimes swaps
+            that for something else instead: <strong>score over</strong> a number, <strong>stay
+            under</strong> it, or <strong>keep every player's own total under</strong> it. Whatever
+            today's board is actually asking for is always shown at the top — check that first, since
+            the immediate-bust rule above only applies when it's asking for an exact hit.
+        </li>
+        <li>
             <strong>One reroll per game.</strong> If you don't like the 3 options on a slot, you can
             redraw them once, for any single slot, at any point in the game.
+        </li>
+        <li>
+            <strong>One hint per game.</strong> Stuck on a pick? Hint flags whichever of the 3 offered
+            players keeps your current objective mathematically reachable — not necessarily the best
+            pick, just a safe one.
         </li>
         <li>
             <strong>No repeat players.</strong> Once a player has been offered — picked or not —

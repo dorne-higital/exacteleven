@@ -12,15 +12,23 @@ export default defineEventHandler(async (event): Promise<RevealResult> => {
     }
 
     const secret = useRuntimeConfig().drawTokenSecret;
-    const playerId = await verifyPlayerToken(token, gameId, secret);
+    const verification = await verifyPlayerToken(token, gameId, secret);
 
-    if (!playerId) {
+    if (!verification.valid) {
+        if (verification.reason === 'expired') {
+            // 410 Gone — a real player who sat on this pick past the token's
+            // TTL, not an anti-peek rejection. Distinct status so the client
+            // can show a neutral "that timed out" message instead of the
+            // accusatory one below.
+            throw createError({ statusCode: 410, statusMessage: 'This pick timed out — try again.' });
+        }
+
         // Either tampered with, or a valid-looking token for a player id that
         // /api/draw never actually signed — reject either way (D2 anti-peek).
         throw createError({ statusCode: 403, statusMessage: 'This player was not offered in this game.' });
     }
 
-    const player = getPlayerById(playerId);
+    const player = getPlayerById(verification.playerId);
 
     if (!player) {
         throw createError({ statusCode: 404, statusMessage: 'Player not found.' });

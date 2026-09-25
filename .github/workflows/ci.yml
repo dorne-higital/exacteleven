@@ -23,3 +23,4 @@ jobs:
       - run: yarn lint:style
       - run: yarn typecheck
       - run: yarn test
+      - run: yarn build

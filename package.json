@@ -17,6 +17,7 @@
     "seed:players": "tsx scripts/seed-players.ts",
     "seed:players:refresh": "tsx scripts/seed-players.ts --fresh",
     "sim:balance": "tsx scripts/simulate.ts",
+    "sim:daily": "tsx scripts/simulate-daily.ts",
     "test": "vitest run",
     "typecheck": "nuxt typecheck && tsc --noEmit -p tsconfig.scripts.json"
   },

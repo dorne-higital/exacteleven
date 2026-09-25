@@ -93,15 +93,21 @@ export async function signPlayerToken(playerId: string, gameId: string, secret: 
     return `${encodedPayload}.${toHex(signature)}`;
 }
 
-// Returns the player id the token was issued for, or null if the token is
-// missing, malformed, expired, doesn't match `gameId`, or doesn't match a
-// signature produced with `secret` (which includes tokens for a player id
-// that was never actually drawn).
-export async function verifyPlayerToken(token: string, gameId: string, secret: string): Promise<string | null> {
+// 'invalid' covers everything that's actually suspicious: missing, malformed,
+// doesn't match `gameId`, or doesn't match a signature produced with `secret`
+// (which includes tokens for a player id that was never actually drawn).
+// 'expired' is its own case — a genuine player who stepped away mid-pick past
+// the TTL, not tampering — so callers can respond to it without the
+// "you might be cheating" framing 'invalid' deserves.
+export type TokenVerification =
+    | { valid: true; playerId: string }
+    | { valid: false; reason: 'invalid' | 'expired' };
+
+export async function verifyPlayerToken(token: string, gameId: string, secret: string): Promise<TokenVerification> {
     const separatorIndex = token.lastIndexOf('.');
 
     if (separatorIndex === -1) {
-        return null;
+        return { valid: false, reason: 'invalid' };
     }
 
     const encodedPayload = token.slice(0, separatorIndex);
@@ -110,14 +116,18 @@ export async function verifyPlayerToken(token: string, gameId: string, secret: s
     const expectedSignature = toHex(await crypto.subtle.sign('HMAC', key, encoder.encode(encodedPayload)));
 
     if (!timingSafeEqual(expectedSignature, signature)) {
-        return null;
+        return { valid: false, reason: 'invalid' };
     }
 
     const payload = decodePayload(encodedPayload);
 
-    if (!payload || payload.gameId !== gameId || Date.now() - payload.issuedAt > TOKEN_TTL_MS) {
-        return null;
+    if (!payload || payload.gameId !== gameId) {
+        return { valid: false, reason: 'invalid' };
     }
 
-    return payload.playerId;
+    if (Date.now() - payload.issuedAt > TOKEN_TTL_MS) {
+        return { valid: false, reason: 'expired' };
+    }
+
+    return { valid: true, playerId: payload.playerId };
 }

@@ -93,13 +93,17 @@ export default defineEventHandler(async (event): Promise<HintResult> => {
     let best: { id: string; waysToWin: number } | null = null;
 
     for (const token of body.tokens) {
-        const playerId = await verifyPlayerToken(token, gameId, secret);
+        const verification = await verifyPlayerToken(token, gameId, secret);
 
-        if (!playerId) {
+        if (!verification.valid) {
+            if (verification.reason === 'expired') {
+                throw createError({ statusCode: 410, statusMessage: 'This pick timed out — try again.' });
+            }
+
             throw createError({ statusCode: 403, statusMessage: 'One of these players was not offered in this game.' });
         }
 
-        const player = getPlayerById(playerId);
+        const player = getPlayerById(verification.playerId);
 
         if (!player) {
             throw createError({ statusCode: 404, statusMessage: 'Player not found.' });
@@ -114,7 +118,7 @@ export default defineEventHandler(async (event): Promise<HintResult> => {
         });
 
         if (!best || waysToWin > best.waysToWin) {
-            best = { id: playerId, waysToWin };
+            best = { id: verification.playerId, waysToWin };
         }
     }
 

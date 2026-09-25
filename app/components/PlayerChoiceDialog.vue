@@ -44,6 +44,9 @@ const revealedName = ref('');
 const displayValue = ref(0);
 const srAnnouncement = ref('');
 const pickError = ref(false);
+// A distinct, blame-free variant of pickError — the anti-peek token expired
+// because the player sat on this pick too long, not because anything broke.
+const pickTimedOut = ref(false);
 // A short, non-essential flavor line for a notable reveal (bust/win/cutting
 // it fine) — null on a routine pick, so most reveals stay quick and quiet.
 const revealFlavor = ref<string | null>(null);
@@ -217,10 +220,19 @@ async function handlePick(candidate: DrawnPlayer): Promise<void> {
     revealedName.value = candidate.name;
     displayValue.value = 0;
     pickError.value = false;
+    pickTimedOut.value = false;
     pickedId.value = candidate.id;
     revealFlavor.value = null;
 
     const result = await pickPlayer(candidate);
+
+    if (result === 'timeout') {
+        revealing.value = false;
+        pickTimedOut.value = true;
+        pickedId.value = null;
+
+        return;
+    }
 
     if (!result) {
         revealing.value = false;
@@ -303,6 +315,7 @@ async function handleReroll(): Promise<void> {
     }
 
     pickError.value = false;
+    pickTimedOut.value = false;
     rerollSpinning.value = true;
     await useReroll();
 }
@@ -379,7 +392,11 @@ function handleBackdropClick(event: MouseEvent): void {
             </li>
         </ul>
 
-        <p v-if="pickError && !showResult" aria-live="polite" class="player-choice__error">
+        <p v-if="pickTimedOut && !showResult" aria-live="polite" class="player-choice__error">
+            That pick timed out — tap the player again for a fresh one.
+        </p>
+
+        <p v-else-if="pickError && !showResult" aria-live="polite" class="player-choice__error">
             Couldn't reveal that pick — tap the player again to retry.
         </p>
 

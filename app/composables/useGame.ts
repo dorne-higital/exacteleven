@@ -380,8 +380,8 @@ export function useGame() {
     // candidates leaves the most ways to still win, via the same server-side
     // odds math winOdds itself uses (the client never sees goals/assists, so
     // this can't be computed locally). Unlike useReroll, only consumed on a
-    // successful response — a network drop shouldn't burn one of only 2 uses
-    // for nothing learned.
+    // successful response — a network drop shouldn't burn the only use for
+    // nothing learned.
     async function useHint(): Promise<string | null> {
         const game = state.value;
 
@@ -427,7 +427,7 @@ export function useGame() {
         return result.recommendedId;
     }
 
-    async function pickPlayer(chosen: DrawnPlayer): Promise<RevealResult | null> {
+    async function pickPlayer(chosen: DrawnPlayer): Promise<RevealResult | 'timeout' | null> {
         const game = state.value;
 
         if (!game || game.status !== 'playing' || !game.activeSlotId || isDrawing.value) {
@@ -454,7 +454,16 @@ export function useGame() {
                 method: 'POST',
                 body: { token: chosen.token, gameId: game.gameId },
             });
-        } catch {
+        } catch (error) {
+            // 410 means the anti-peek token itself expired — a player who sat
+            // on this pick past its 5-minute TTL, not tampering. Distinct
+            // from every other failure (network drop, a genuinely rejected
+            // token, a server error) so the dialog can show a neutral
+            // "that timed out" message instead of the generic retry one.
+            if ((error as { statusCode?: number } | null)?.statusCode === 410) {
+                return 'timeout';
+            }
+
             return null;
         }
 
