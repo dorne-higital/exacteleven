@@ -1,9 +1,7 @@
 <script setup lang="ts">
-const { initTheme } = useTheme();
 const { loadStats } = useStats();
 
 onMounted(() => {
-    initTheme();
     loadStats();
 });
 
@@ -42,24 +40,27 @@ useHead({
 </template>
 
 <style lang="scss">
-// "Match Programme" (default) and "Dugout Dark" themes — values pulled
-// verbatim from the approved design canvas (MP-*/Redesign-MatchProgramme and
-// DD-*/Redesign-DugoutDark .dc.html boards), not re-derived. Switching
-// themes sets `data-theme` on <html> (see useTheme.ts); adding a third theme
-// later means adding one more `:root[data-theme='...']` block here, nothing
-// else — every component reads these tokens, never a raw hex value.
+// "Terrace Press" — a single, deliberate identity (no light/dark toggle):
+// aged programme paper, ink-black type, terrace green, one matchday-red
+// accent. Values pulled from the approved Terrace Press design board, not
+// re-derived. Every component reads these tokens, never a raw hex value —
+// see the design exploration this was built from for the full token/
+// component rationale.
 :root {
-    --color-background: #f6f3ec;
-    --color-surface: #fff;
-    --color-foreground: #1a1d1b;
-    --color-primary: #1c6b4a;
-    --color-primary-strong: #123f2c;
-    --color-danger: #b3401f;
-    --color-pitch: #2f7a52;
-    --color-pitch-line: rgb(255 255 255 / 55%);
-    --font-body: 'Manrope', system-ui, sans-serif;
-    --font-display: 'Fredoka', 'Manrope', system-ui, sans-serif;
+    --color-background: #efe6d3;
+    --color-surface: #fffdf6;
+    --color-foreground: #201a12;
+    --color-primary: #1f4d3a;
+    --color-primary-strong: #14332a;
+    --color-danger: #c1272d;
+    --color-pitch: #1f4d3a;
+    --color-pitch-line: rgb(255 253 246 / 55%);
+    --font-body: 'Source Serif 4', georgia, serif;
+    --font-display: 'Fraunces', georgia, serif;
     --display-text-transform: none;
+
+    // A faint diagonal hatch rather than a flat fill — enough grain to read
+    // as paper stock, not so much it fights body text at small sizes.
     --body-texture: repeating-linear-gradient(
         135deg,
         color-mix(in srgb, var(--color-foreground) 3.5%, transparent) 0,
@@ -71,34 +72,23 @@ useHead({
 
     // Pitch-slot colors are separate from the page-level surface/foreground
     // pair: a slot always sits on the pitch (see Pitch.vue), so "what reads
-    // well here" depends on the pitch's own color, not the page background.
-    // A 16% white tint here (measured, not just eyeballed) put white slot
-    // label text at 3.81:1 against the composited backdrop, short of WCAG
-    // AA's 4.5:1 for normal-size text — 6% keeps the same frosted-glass
-    // look while landing at 4.63:1.
-    --slot-empty-bg: rgb(255 255 255 / 6%);
-    --slot-empty-border: rgb(255 255 255 / 55%);
-    --slot-empty-text: #fff;
-    --slot-filled-text: var(--color-foreground);
-}
-
-:root[data-theme='dugout-dark'] {
-    --color-background: #0a0b0c;
-    --color-surface: #17181a;
-    --color-foreground: #f5f6f4;
-    --color-primary: #7cfb5b;
-    --color-primary-strong: #0a0b0c;
-    --color-danger: #ff4d4d;
-    --color-pitch: #10201a;
-    --color-pitch-line: rgb(124 251 91 / 35%);
-    --font-display: 'Anton', 'Manrope', system-ui, sans-serif;
-    --display-text-transform: uppercase;
-    --body-texture: radial-gradient(color-mix(in srgb, var(--color-foreground) 5%, transparent) 1px, transparent 1px);
-    --body-texture-size: 6px 6px;
-    --slot-empty-bg: rgb(245 246 244 / 4%);
-    --slot-empty-border: rgb(245 246 244 / 55%);
-    --slot-empty-text: rgb(245 246 244 / 55%);
+    // well here" depends on the pitch's own dark-green color, not the paper
+    // page background. A 6% paper-raised tint here puts white slot label
+    // text at roughly 8:1 against the composited backdrop — comfortably
+    // past WCAG AA's 4.5:1 for normal-size text, with headroom to spare.
+    --slot-empty-bg: rgb(255 253 246 / 6%);
+    --slot-empty-border: rgb(255 253 246 / 55%);
+    --slot-empty-text: #fffdf6;
     --slot-filled-text: var(--color-primary);
+
+    // Terrace Press's one deliberate softness: a "ticket stub" pill reserved
+    // for genuine primary actions (see CreateChallengeDialog, ResultPanel,
+    // AchievementToast). Everything else — cards, dialogs, chips, buttons —
+    // stays sharp: --radius-sharp is 0 on purpose, kept as a named token so
+    // that intent reads in the component styles that use it, not just in
+    // this comment.
+    --radius-sharp: 0;
+    --radius-stub: 999px;
 }
 
 body {

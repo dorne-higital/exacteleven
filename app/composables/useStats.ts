@@ -141,9 +141,9 @@ export function useStats() {
     // shows one at a time and shifts this as each is dismissed.
     const newlyUnlocked = useState<AchievementDef[]>('exact-xi-newly-unlocked', () => []);
 
-    // Called once from app.vue's onMounted, same as useTheme's initTheme —
-    // localStorage isn't available during SSR, so the default above renders
-    // first and this hydrates the real value client-side.
+    // Called once from app.vue's onMounted — localStorage isn't available
+    // during SSR, so the default above renders first and this hydrates the
+    // real value client-side.
     function loadStats(): void {
         if (import.meta.client) {
             stats.value = readStoredStats();

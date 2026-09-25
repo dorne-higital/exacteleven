@@ -285,7 +285,7 @@ watch(open, (isOpen) => {
 .create-challenge__chip {
     background: none;
     border: 1px solid color-mix(in srgb, var(--color-foreground) 20%, transparent);
-    border-radius: 999px;
+    border-radius: var(--radius-sharp);
     color: inherit;
     cursor: pointer;
     font: inherit;
@@ -305,10 +305,12 @@ watch(open, (isOpen) => {
     color: var(--color-background);
 }
 
+// The ticket-stub CTA — this class carries whichever action is primary
+// for the current step (generate, then share/copy).
 .create-challenge__generate {
     background-color: var(--color-primary);
     border: none;
-    border-radius: 0.5rem;
+    border-radius: var(--radius-stub);
     color: var(--color-background);
     cursor: pointer;
     flex: 1 1 auto;
@@ -341,7 +343,7 @@ watch(open, (isOpen) => {
 
 .create-challenge__link {
     background-color: color-mix(in srgb, var(--color-foreground) 6%, transparent);
-    border-radius: 0.5rem;
+    border-radius: var(--radius-sharp);
     display: block;
     font-size: 0.75rem;
     margin-bottom: 1rem;
@@ -358,7 +360,7 @@ watch(open, (isOpen) => {
 .create-challenge__start-over {
     background: none;
     border: 1px solid color-mix(in srgb, var(--color-foreground) 20%, transparent);
-    border-radius: 0.5rem;
+    border-radius: var(--radius-sharp);
     color: inherit;
     cursor: pointer;
     flex: 1 1 auto;

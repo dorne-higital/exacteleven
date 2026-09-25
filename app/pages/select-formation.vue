@@ -19,7 +19,6 @@ usePageSeoMeta({
                 <AppIcon name="back" />
                 Home
             </NuxtLink>
-            <ThemeToggle />
         </AppHeader>
 
         <div class="select-formation__inner">
@@ -107,7 +106,7 @@ h1 {
     background-color: color-mix(in srgb, var(--color-foreground) 6%, transparent);
     border: 1px solid color-mix(in srgb, var(--color-foreground) 15%, transparent);
     border-left: 4px solid color-mix(in srgb, var(--color-foreground) 15%, transparent);
-    border-radius: 0.75rem;
+    border-radius: var(--radius-sharp);
     color: inherit;
     display: flex;
     gap: 0.875rem;
@@ -152,7 +151,7 @@ h1 {
 
 .formations__tag {
     border: 1px solid currentcolor;
-    border-radius: 999px;
+    border-radius: var(--radius-sharp);
     flex-shrink: 0;
     font-family: var(--font-display);
     font-size: 0.65rem;

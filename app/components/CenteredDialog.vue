@@ -60,7 +60,7 @@ function handleBackdropClick(event: MouseEvent): void {
 .centered-dialog {
     background-color: var(--color-surface);
     border: 1px solid color-mix(in srgb, var(--color-foreground) 15%, transparent);
-    border-radius: 1rem;
+    border-radius: var(--radius-sharp);
     box-shadow: 0 16px 40px rgb(0 0 0 / 25%);
     color: inherit;
     margin: auto;
@@ -120,7 +120,7 @@ function handleBackdropClick(event: MouseEvent): void {
     align-items: center;
     background-color: color-mix(in srgb, var(--color-foreground) 6%, transparent);
     border: 1px solid color-mix(in srgb, var(--color-foreground) 15%, transparent);
-    border-radius: 50%;
+    border-radius: var(--radius-sharp);
     color: inherit;
     cursor: pointer;
     display: flex;

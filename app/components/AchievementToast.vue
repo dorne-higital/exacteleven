@@ -106,7 +106,7 @@ function handleDismiss(): void {
     align-items: center;
     background-color: var(--color-surface);
     border: 1px solid var(--color-primary);
-    border-radius: 0.75rem;
+    border-radius: var(--radius-sharp);
     bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px));
     box-shadow: 0 12px 32px rgb(0 0 0 / 35%);
     display: flex;
@@ -169,10 +169,12 @@ function handleDismiss(): void {
     gap: 0.4rem;
 }
 
+// The ticket-stub CTA — sharing a just-unlocked badge is a real call to
+// action, same reasoning as ResultPanel's primary button.
 .achievement-toast__share {
     background-color: var(--color-primary);
     border: none;
-    border-radius: 0.4rem;
+    border-radius: var(--radius-stub);
     color: var(--color-background);
     cursor: pointer;
     font: inherit;

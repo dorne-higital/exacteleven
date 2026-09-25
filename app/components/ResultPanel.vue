@@ -183,12 +183,13 @@ watch(outcome, (value) => {
 
 // A fixed, non-random spread (not Math.random()) — purely cosmetic values
 // like this still don't need real randomness, and staying deterministic
-// costs nothing here. Only the first entry is a theme token on purpose — a
-// celebration needs a multi-color spread to read as confetti at all, which
-// the app's small token set can't supply on its own, so the rest are fixed
-// hexes chosen to sit well against both themes (same reasoning as the medal
+// costs nothing here. The first two entries are theme tokens; a celebration
+// still needs more than two colors to read as confetti at all, so the rest
+// are fixed hexes picked to sit alongside Terrace Press's muted paper-and-ink
+// palette — a faded mustard and a dusty blue, like aged printed bunting,
+// rather than a bright modern confetti spread (same reasoning as the medal
 // colors in AchievementBadge.vue).
-const CONFETTI_COLORS = ['var(--color-primary)', '#ffc400', '#ff8a3d', '#4da6ff'];
+const CONFETTI_COLORS = ['var(--color-primary)', 'var(--color-danger)', '#c08a2e', '#3d6b7a'];
 const CONFETTI_COUNT = 18;
 
 interface ConfettiPiece {
@@ -591,7 +592,7 @@ function compactStatCaption(player: { goals: number; assists: number }): string 
     background-color: var(--color-surface);
     border: 1px solid color-mix(in srgb, var(--color-foreground) 15%, transparent);
     border-left: 4px solid var(--color-foreground);
-    border-radius: 0.75rem;
+    border-radius: var(--radius-sharp);
     display: flex;
     flex-direction: column;
     gap: 1rem;
@@ -691,7 +692,7 @@ function compactStatCaption(player: { goals: number; assists: number }): string 
 .result-panel__stamp {
     animation: result-panel-stamp-down 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
     border: 3px solid var(--color-danger);
-    border-radius: 6px;
+    border-radius: var(--radius-sharp);
     color: var(--color-danger);
     font-family: var(--font-display);
     font-size: 1.3rem;
@@ -805,7 +806,7 @@ function compactStatCaption(player: { goals: number; assists: number }): string 
         color-mix(in srgb, var(--color-primary) 3%, transparent)
     );
     border: 1px solid color-mix(in srgb, var(--color-primary) 35%, transparent);
-    border-radius: 0.75rem;
+    border-radius: var(--radius-sharp);
     display: flex;
     gap: 0.875rem;
     padding: 0.875rem 1rem;
@@ -875,7 +876,7 @@ function compactStatCaption(player: { goals: number; assists: number }): string 
 
 .result-panel__recap-role {
     border: 1px solid color-mix(in srgb, var(--color-foreground) 20%, transparent);
-    border-radius: 999px;
+    border-radius: var(--radius-sharp);
     color: color-mix(in srgb, var(--color-foreground) 70%, transparent);
     flex-shrink: 0;
     font-size: 0.65rem;
@@ -918,7 +919,7 @@ function compactStatCaption(player: { goals: number; assists: number }): string 
 .result-panel__action {
     background-color: color-mix(in srgb, var(--color-foreground) 8%, transparent);
     border: 1px solid color-mix(in srgb, var(--color-foreground) 20%, transparent);
-    border-radius: 0.5rem;
+    border-radius: var(--radius-sharp);
     color: inherit;
     cursor: pointer;
     flex: 1 1 auto;
@@ -928,9 +929,14 @@ function compactStatCaption(player: { goals: number; assists: number }): string 
     text-decoration: none;
 }
 
+// The one "ticket stub" CTA in this row — Play Again is the genuine primary
+// action once a game ends, so it gets the pill Terrace Press reserves for
+// real calls to action; Change formation and Share image stay on the shared
+// sharp-cornered base above.
 .result-panel__action--primary {
     background-color: var(--color-primary);
     border-color: var(--color-primary);
+    border-radius: var(--radius-stub);
     color: var(--color-background);
     font-weight: 700;
 }
@@ -938,7 +944,7 @@ function compactStatCaption(player: { goals: number; assists: number }): string 
 .result-panel__share {
     align-items: center;
     background-color: color-mix(in srgb, var(--color-foreground) 6%, transparent);
-    border-radius: 0.5rem;
+    border-radius: var(--radius-sharp);
     display: flex;
     gap: 0.75rem;
     justify-content: space-between;
@@ -962,7 +968,7 @@ function compactStatCaption(player: { goals: number; assists: number }): string 
 .result-panel__share-copy {
     background: none;
     border: 1px solid color-mix(in srgb, var(--color-foreground) 25%, transparent);
-    border-radius: 0.4rem;
+    border-radius: var(--radius-sharp);
     color: inherit;
     cursor: pointer;
     flex-shrink: 0;

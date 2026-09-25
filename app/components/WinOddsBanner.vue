@@ -27,7 +27,7 @@ const label = computed(() => (
     align-items: center;
     background-color: color-mix(in srgb, var(--color-primary) 10%, transparent);
     border: 1px solid color-mix(in srgb, var(--color-primary) 25%, transparent);
-    border-radius: 0.75rem;
+    border-radius: var(--radius-sharp);
     color: inherit;
     display: flex;
     font-size: 0.8rem;

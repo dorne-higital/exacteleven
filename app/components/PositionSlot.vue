@@ -68,15 +68,15 @@ function handleClick(): void {
 <style lang="scss" scoped>
 // Slots always sit on top of the pitch's own turf (see Pitch.vue), never
 // directly on the page's background — so their colors come from dedicated
-// per-theme --slot-* tokens (app.vue) rather than the page-level
-// --color-foreground/--color-surface pair, since what reads well on a green
-// (Match Programme) or near-black (Dugout Dark) pitch isn't the same as what
-// reads well on that theme's page background.
+// --slot-* tokens (app.vue) rather than the page-level
+// --color-foreground/--color-surface pair, since what reads well on the
+// dark-green pitch isn't the same as what reads well on the paper page
+// background.
 .position-slot {
     align-items: center;
     background-color: var(--slot-empty-bg);
     border: 1.5px dashed var(--slot-empty-border);
-    border-radius: 0.625rem;
+    border-radius: var(--radius-sharp);
     color: var(--slot-empty-text);
     cursor: pointer;
     display: flex;

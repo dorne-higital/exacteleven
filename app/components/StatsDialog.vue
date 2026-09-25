@@ -295,7 +295,7 @@ function handleReset(): void {
 .stats-dialog__tab {
     background: none;
     border: 1px solid color-mix(in srgb, var(--color-foreground) 20%, transparent);
-    border-radius: 999px;
+    border-radius: var(--radius-sharp);
     color: color-mix(in srgb, var(--color-foreground) 70%, transparent);
     cursor: pointer;
     font: inherit;
@@ -338,7 +338,7 @@ function handleReset(): void {
 
 .stats-dialog__best {
     background-color: color-mix(in srgb, var(--color-foreground) 6%, transparent);
-    border-radius: 0.5rem;
+    border-radius: var(--radius-sharp);
     font-size: 0.85rem;
     margin: 0 0 1rem;
     padding: 0.5rem 0.75rem;
@@ -363,7 +363,7 @@ function handleReset(): void {
 
 .stats-dialog__bar-track {
     background-color: color-mix(in srgb, var(--color-foreground) 10%, transparent);
-    border-radius: 999px;
+    border-radius: var(--radius-sharp);
     height: 0.5rem;
     overflow: hidden;
 }
@@ -443,7 +443,7 @@ function handleReset(): void {
 .stats-dialog__reset {
     background: none;
     border: 1px solid color-mix(in srgb, var(--color-foreground) 20%, transparent);
-    border-radius: 0.4rem;
+    border-radius: var(--radius-sharp);
     color: color-mix(in srgb, var(--color-foreground) 70%, transparent);
     cursor: pointer;
     font: inherit;

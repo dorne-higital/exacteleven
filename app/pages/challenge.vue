@@ -108,7 +108,6 @@ usePageSeoMeta({
             <button aria-label="Your stats" class="challenge__info-button" type="button" @click="openStats">
                 <AppIcon name="stats" />
             </button>
-            <ThemeToggle />
         </AppHeader>
 
         <div class="challenge__inner">
@@ -191,7 +190,7 @@ usePageSeoMeta({
     align-items: center;
     background-color: color-mix(in srgb, var(--color-foreground) 6%, transparent);
     border: 1px solid color-mix(in srgb, var(--color-foreground) 15%, transparent);
-    border-radius: 50%;
+    border-radius: var(--radius-sharp);
     color: inherit;
     cursor: pointer;
     display: flex;
@@ -243,7 +242,7 @@ usePageSeoMeta({
 
 .challenge__draw-error {
     background-color: color-mix(in srgb, var(--color-danger) 12%, transparent);
-    border-radius: 0.5rem;
+    border-radius: var(--radius-sharp);
     color: var(--color-danger);
     font-size: 0.85rem;
     font-weight: 600;

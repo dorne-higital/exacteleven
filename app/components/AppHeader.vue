@@ -1,10 +1,10 @@
 <script setup lang="ts">
 // Persistent across every page: the logo + wordmark always link home, and
-// each page puts its own controls (a back link, the info button,
-// ThemeToggle) in the slot — see index.vue/play.vue/how-to-play.vue for what
-// each page passes. Sized to its own max-width (not its parent's) so the bar
-// renders the same width on every page, regardless of how wide that page's
-// own content column happens to be below it.
+// each page puts its own controls (a back link, the info button) in the
+// slot — see index.vue/play.vue/how-to-play.vue for what each page passes.
+// Sized to its own max-width (not its parent's) so the bar renders the same
+// width on every page, regardless of how wide that page's own content
+// column happens to be below it.
 </script>
 
 <template>

@@ -8,9 +8,10 @@ const props = defineProps<{
     unlocked: boolean;
 }>();
 
-// A real medal's color says "how rare" independent of any single theme, so
-// these stay fixed hexes rather than the app's --color-primary tokens —
-// bronze should look like bronze in both Match Programme and Dugout Dark.
+// A real medal's color says "how rare" independent of the page's own accent,
+// so these stay fixed hexes rather than the app's --color-primary token —
+// bronze should look like bronze regardless of what the theme's own green
+// happens to be.
 const RANK_COLORS: Record<AchievementRank, { fill: string; accent: string }> = {
     bronze: { fill: '#8a5a34', accent: '#e3ab73' },
     silver: { fill: '#8b949c', accent: '#eef1f3' },

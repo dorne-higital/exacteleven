@@ -12,7 +12,6 @@ usePageSeoMeta({
                 <AppIcon name="back" />
                 Home
             </NuxtLink>
-            <ThemeToggle />
         </AppHeader>
 
         <div class="how-to-play__inner">

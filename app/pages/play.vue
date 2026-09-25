@@ -13,7 +13,7 @@ const { state, isDrawing, pendingSlotId, drawError, startGame, resumeGame, openS
 // progress is already in state rather than wiping it out. This runs
 // server-side too (sessionStorage isn't available there), so it always
 // produces a fresh game on first render — resumeGame() below corrects that
-// client-side once mounted, same flash-then-correct pattern useTheme uses.
+// client-side once mounted.
 if (formation.value && state.value?.formationCode !== formation.value.code) {
     startGame(formation.value.code);
 }
@@ -75,7 +75,6 @@ usePageSeoMeta({
             <button aria-label="Your stats" class="play__info-button" type="button" @click="openStats">
                 <AppIcon name="stats" />
             </button>
-            <ThemeToggle />
         </AppHeader>
 
         <div class="play__inner">
@@ -154,7 +153,7 @@ usePageSeoMeta({
     align-items: center;
     background-color: color-mix(in srgb, var(--color-foreground) 6%, transparent);
     border: 1px solid color-mix(in srgb, var(--color-foreground) 15%, transparent);
-    border-radius: 50%;
+    border-radius: var(--radius-sharp);
     color: inherit;
     cursor: pointer;
     display: flex;
@@ -186,7 +185,7 @@ usePageSeoMeta({
 
 .play__draw-error {
     background-color: color-mix(in srgb, var(--color-danger) 12%, transparent);
-    border-radius: 0.5rem;
+    border-radius: var(--radius-sharp);
     color: var(--color-danger);
     font-size: 0.85rem;
     font-weight: 600;

@@ -21,14 +21,13 @@ export default defineNuxtConfig({
     // <link> tags — those blocked first paint on a fonts.googleapis.com
     // round-trip; self-hosting serves woff2 files from this origin with
     // fallback metrics generated automatically, removing that render-blocking
-    // hop and its CLS risk. Both themes' display fonts stay listed upfront
-    // (Fredoka for Match Programme, Anton for Dugout Dark) since switching
-    // themes is instant, client-side, and shouldn't wait on a font fetch.
+    // hop and its CLS risk. Fraunces (display) and Source Serif 4 (body) are
+    // the "Terrace Press" identity's whole type system — one family per role,
+    // no per-theme swap needed now that there's a single theme.
     fonts: {
         families: [
-            { name: 'Manrope', weights: [400, 600, 700], provider: 'google' },
-            { name: 'Fredoka', weights: [600, 700], provider: 'google' },
-            { name: 'Anton', weights: [400], provider: 'google' },
+            { name: 'Source Serif 4', weights: [400, 600], provider: 'google' },
+            { name: 'Fraunces', weights: [600, 700, 900], provider: 'google' },
         ],
         // Every font here is only ever referenced through the --font-body/
         // --font-display custom properties (app.vue), never a literal

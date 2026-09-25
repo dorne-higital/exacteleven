@@ -72,7 +72,7 @@ const remainingLabel = computed(() => (props.status === 'playing' ? 'Remaining' 
 <style lang="scss" scoped>
 .score-bar {
     background-color: color-mix(in srgb, var(--color-foreground) 6%, transparent);
-    border-radius: 0.75rem;
+    border-radius: var(--radius-sharp);
     display: flex;
     flex-direction: column;
     gap: 0.65rem;
@@ -118,7 +118,7 @@ const remainingLabel = computed(() => (props.status === 'playing' ? 'Remaining' 
 
 .score-bar__track {
     background-color: color-mix(in srgb, var(--color-foreground) 12%, transparent);
-    border-radius: 999px;
+    border-radius: var(--radius-sharp);
     height: 0.4rem;
     overflow: hidden;
     width: 100%;

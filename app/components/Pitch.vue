@@ -25,13 +25,13 @@
 </template>
 
 <style lang="scss" scoped>
-// The pitch is always dark green turf regardless of the page's light/dark
-// theme, so its own colors are dedicated tokens (--color-pitch/-line), not
-// derived from --color-foreground — which now means "ink" and would produce
+// The pitch is always dark green turf, independent of the page's paper
+// background — its own colors are dedicated tokens (--color-pitch/-line),
+// not derived from --color-foreground, which means "ink" and would produce
 // near-invisible dark lines on green instead of the white pitch markings.
 .pitch {
     background-color: var(--color-pitch);
-    border-radius: 0.75rem;
+    border-radius: var(--radius-sharp);
     display: block;
     height: 100%;
     left: 0;

@@ -438,7 +438,7 @@ function handleBackdropClick(event: MouseEvent): void {
 .player-choice {
     background-color: var(--color-surface);
     border: 1px solid color-mix(in srgb, var(--color-foreground) 15%, transparent);
-    border-radius: 1rem 1rem 0 0;
+    border-radius: var(--radius-sharp);
     box-shadow: 0 -12px 32px rgb(0 0 0 / 45%);
     color: inherit;
     inset: auto 0 0;
@@ -464,7 +464,7 @@ function handleBackdropClick(event: MouseEvent): void {
 // mobile component.
 @media (width >= 640px) {
     .player-choice {
-        border-radius: 1rem;
+        border-radius: var(--radius-sharp);
         bottom: 2rem;
         left: 50%;
         max-width: 26rem;
@@ -512,7 +512,7 @@ function handleBackdropClick(event: MouseEvent): void {
 
 .player-choice__handle {
     background-color: color-mix(in srgb, var(--color-foreground) 25%, transparent);
-    border-radius: 999px;
+    border-radius: var(--radius-sharp);
     height: 0.25rem;
     margin: 0 auto 0.75rem;
     width: 2.5rem;
@@ -553,7 +553,7 @@ function handleBackdropClick(event: MouseEvent): void {
 
 .player-choice__error {
     background-color: color-mix(in srgb, var(--color-danger) 12%, transparent);
-    border-radius: 0.5rem;
+    border-radius: var(--radius-sharp);
     color: var(--color-danger);
     font-size: 0.85rem;
     font-weight: 600;
@@ -573,7 +573,7 @@ function handleBackdropClick(event: MouseEvent): void {
 .player-choice__option {
     background-color: color-mix(in srgb, var(--color-foreground) 6%, transparent);
     border: 1px solid color-mix(in srgb, var(--color-foreground) 15%, transparent);
-    border-radius: 0.5rem;
+    border-radius: var(--radius-sharp);
     color: inherit;
     cursor: pointer;
     display: flex;
@@ -664,7 +664,7 @@ function handleBackdropClick(event: MouseEvent): void {
     align-items: center;
     background-color: color-mix(in srgb, var(--color-foreground) 6%, transparent);
     border: 1px solid color-mix(in srgb, var(--color-foreground) 15%, transparent);
-    border-radius: 999px;
+    border-radius: var(--radius-sharp);
     color: color-mix(in srgb, var(--color-foreground) 80%, transparent);
     cursor: pointer;
     display: flex;
@@ -751,7 +751,7 @@ function handleBackdropClick(event: MouseEvent): void {
 
 .player-choice__recommended-badge {
     background-color: var(--color-primary);
-    border-radius: 999px;
+    border-radius: var(--radius-sharp);
     color: var(--color-surface);
     font-size: 0.6rem;
     font-weight: 700;
