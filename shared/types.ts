@@ -96,10 +96,10 @@ export interface WinOdds {
 }
 
 // /api/hint's response — only ever the id of whichever currently-offered
-// candidate leaves the most ways to win, never any goals/assists (same D2
+// candidate leaves the fewest ways to win, never any goals/assists (same D2
 // anti-peek boundary as the rest of the draw/reveal flow).
 export interface HintResult {
-    recommendedId: string;
+    ruledOutId: string;
 }
 
 export interface GameState {

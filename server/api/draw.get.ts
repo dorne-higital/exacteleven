@@ -33,8 +33,8 @@ function sampleWithoutReplacement<T>(items: T[], count: number): T[] {
 // At least one of the 3 candidates offered should keep the game genuinely
 // winnable when the pool allows it — otherwise a run of bad luck alone could
 // make a slot's draw a dead end regardless of skill, and the Hint feature
-// would sometimes be recommending "the best of 3 losing options" rather than
-// an actual path to winning. `viable` is a subset of the whole eligible pool
+// would sometimes be ruling out one of 3 losing options, leaving no actual
+// path to winning either way. `viable` is a subset of the whole eligible pool
 // (already computed by the caller); the other 2 slots stay plain random, and
 // the 3 are shuffled together so the guaranteed pick doesn't always land in
 // the same offered position.

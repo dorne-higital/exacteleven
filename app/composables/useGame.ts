@@ -1,3 +1,4 @@
+import { HINT_MIN_OPEN_SLOTS } from '#shared/hint';
 import type { DrawnPlayer, FormationCode, GameSlot, GameState, HintResult, Objective, Player, RevealResult, WinOdds } from '../../shared/types';
 import { trackEvent } from '../utils/analytics';
 import { getObjectiveResult } from '../utils/daily-scoring';
@@ -376,16 +377,25 @@ export function useGame() {
         return true;
     }
 
-    // One hint per game — recommends whichever of the currently-offered
-    // candidates leaves the most ways to still win, via the same server-side
-    // odds math winOdds itself uses (the client never sees goals/assists, so
-    // this can't be computed locally). Unlike useReroll, only consumed on a
-    // successful response — a network drop shouldn't burn the only use for
-    // nothing learned.
+    // Whether the hint can still be used at all — false once fewer than
+    // HINT_MIN_OPEN_SLOTS slots are empty (see shared/hint.ts for why), even
+    // if it hasn't been spent yet.
+    function isHintLocked(): boolean {
+        const game = state.value;
+
+        return !!game && game.slots.filter((slot) => !slot.player).length < HINT_MIN_OPEN_SLOTS;
+    }
+
+    // One hint per game — rules out whichever of the currently-offered
+    // candidates leaves the fewest ways to still win, via the same
+    // server-side odds math winOdds itself uses (the client never sees
+    // goals/assists, so this can't be computed locally). Unlike useReroll,
+    // only consumed on a successful response — a network drop shouldn't burn
+    // the only use for nothing learned.
     async function useHint(): Promise<string | null> {
         const game = state.value;
 
-        if (!game || game.status !== 'playing' || game.hintsLeft <= 0 || !game.activeSlotId || isDrawing.value) {
+        if (!game || game.status !== 'playing' || game.hintsLeft <= 0 || isHintLocked() || !game.activeSlotId || isDrawing.value) {
             return null;
         }
 
@@ -421,10 +431,10 @@ export function useGame() {
         }
 
         game.hintsLeft -= 1;
-        trackEvent('hint_used', { formation: game.formationCode });
+        trackEvent('hint_used', { formation: game.formationCode, slots_left: remaining.length + 1 });
         writePersistedGame(game);
 
-        return result.recommendedId;
+        return result.ruledOutId;
     }
 
     async function pickPlayer(chosen: DrawnPlayer): Promise<RevealResult | 'timeout' | null> {
@@ -575,6 +585,7 @@ export function useGame() {
         pickPlayer,
         useReroll,
         useHint,
+        isHintLocked,
         closeDialog,
         reset,
     };

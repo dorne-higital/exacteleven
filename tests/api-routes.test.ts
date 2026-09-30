@@ -103,27 +103,41 @@ describe('POST /api/reveal — full draw -> reveal round trip', () => {
 });
 
 describe('POST /api/hint', () => {
-    it('recommends one of the currently-offered candidates', async () => {
+    it('rules out one of the currently-offered candidates', async () => {
         const candidates = await draw(fakeQueryEvent({ position: 'MID', gameId: GAME_ID })) as DrawnPlayer[];
 
         const result = await hint(fakeBodyEvent({
             gameId: GAME_ID,
             tokens: candidates.map((candidate) => candidate.token),
-            remaining: '',
+            remaining: 'DEF,FWD',
             exclude: '',
             objectiveKind: 'exact',
             objectiveValue: 400,
             total: 0,
         })) as HintResult;
 
-        expect(candidates.map((candidate) => candidate.id)).toContain(result.recommendedId);
+        expect(candidates.map((candidate) => candidate.id)).toContain(result.ruledOutId);
+    });
+
+    it('rejects a hint with fewer than 3 slots open with 400', async () => {
+        const candidates = await draw(fakeQueryEvent({ position: 'MID', gameId: GAME_ID })) as DrawnPlayer[];
+
+        await expect(hint(fakeBodyEvent({
+            gameId: GAME_ID,
+            tokens: candidates.map((candidate) => candidate.token),
+            remaining: 'FWD',
+            exclude: '',
+            objectiveKind: 'exact',
+            objectiveValue: 400,
+            total: 0,
+        }))).rejects.toMatchObject({ statusCode: 400 });
     });
 
     it('rejects a token that was not offered in this game with 403', async () => {
         await expect(hint(fakeBodyEvent({
             gameId: GAME_ID,
             tokens: ['not-a-real-token'],
-            remaining: '',
+            remaining: 'DEF,FWD',
             exclude: '',
             objectiveKind: 'exact',
             objectiveValue: 400,
@@ -137,7 +151,7 @@ describe('POST /api/hint', () => {
         await expect(hint(fakeBodyEvent({
             gameId: GAME_ID,
             tokens: [...candidates.map((candidate) => candidate.token), 'one-too-many'],
-            remaining: '',
+            remaining: 'DEF,FWD',
             exclude: '',
             objectiveKind: 'exact',
             objectiveValue: 400,

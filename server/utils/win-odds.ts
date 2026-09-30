@@ -85,8 +85,9 @@ export function computeWinOddsFromPools(
 ): WinOdds {
     if (pools.length === 0) {
         // No more slots to fill — the outcome is already fully decided by
-        // runningTotal alone (this is the case /api/hint cares about when
-        // evaluating a candidate for the very last open slot). allUnder has
+        // runningTotal alone. /api/hint no longer reaches this (it's locked
+        // for the last few slots — see shared/hint.ts), but it stays the
+        // correct base case for any caller that does. allUnder has
         // no ceiling left to breach at this point — any breach would already
         // have ended the game earlier — so reaching here always counts as a win for it.
         if (objectiveKind === 'allUnder') {

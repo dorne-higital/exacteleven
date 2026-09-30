@@ -46,9 +46,9 @@
             redraw them once, for any single slot, at any point in the game.
         </li>
         <li>
-            <strong>One hint per game.</strong> Stuck on a pick? Hint flags whichever of the 3 offered
-            players keeps your current objective mathematically reachable — not necessarily the best
-            pick, just a safe one.
+            <strong>One hint per game.</strong> Stuck on a pick? Hint rules out whichever of the 3
+            offered players does the most damage to your chances — the call between the other two is
+            still yours. It locks once only 2 slots are left, so don't save it too long.
         </li>
         <li>
             <strong>No repeat players.</strong> Once a player has been offered — picked or not —

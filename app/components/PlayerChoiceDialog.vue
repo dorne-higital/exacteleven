@@ -2,16 +2,17 @@
 import type { DrawnPlayer, PositionGroup } from '../../shared/types';
 import { classifyReveal, pickFlavorLine } from '../utils/reveal-flavor';
 
-const { state, isDrawing, pickPlayer, useReroll, useHint, closeDialog } = useGame();
+const { state, isDrawing, pickPlayer, useReroll, useHint, isHintLocked, closeDialog } = useGame();
 
 const candidates = computed(() => state.value?.offeredPlayers ?? []);
 const rerollsLeft = computed(() => state.value?.rerollsLeft ?? 0);
 const hintsLeft = computed(() => state.value?.hintsLeft ?? 0);
-// Which currently-offered candidate the last hint recommended, if any —
+const hintLocked = computed(() => isHintLocked());
+// Which currently-offered candidate the last hint ruled out, if any —
 // reset whenever the offered candidates change (see the candidates watcher
-// below), since a stale recommendation from a previous draw is meaningless
-// once the options themselves have changed.
-const recommendedId = ref<string | null>(null);
+// below), since a stale hint from a previous draw is meaningless once the
+// options themselves have changed.
+const ruledOutId = ref<string | null>(null);
 
 // Player data only tracks the broad GK/DEF/MID/FWD group, not real-world
 // sub-positions — so a "right-back" slot can just as easily offer a
@@ -165,7 +166,7 @@ watch(candidates, (items) => {
     if (items.length > 0) {
         startScramble(items);
         pickedId.value = null;
-        recommendedId.value = null;
+        ruledOutId.value = null;
     }
 }, { immediate: true });
 
@@ -323,17 +324,17 @@ async function handleReroll(): Promise<void> {
 const hintLoading = ref(false);
 
 async function handleHint(): Promise<void> {
-    // Also blocks a second tap once a recommendation is already showing for
+    // Also blocks a second tap once a hint is already showing for
     // these exact candidates — re-asking would just spend a hint to learn
     // the same answer again.
-    if (revealing.value || isDrawing.value || isScrambling.value || hintsLeft.value <= 0 || recommendedId.value) {
+    if (revealing.value || isDrawing.value || isScrambling.value || hintsLeft.value <= 0 || hintLocked.value || ruledOutId.value) {
         return;
     }
 
     hintLoading.value = true;
 
     try {
-        recommendedId.value = await useHint();
+        ruledOutId.value = await useHint();
     } finally {
         hintLoading.value = false;
     }
@@ -373,19 +374,19 @@ function handleBackdropClick(event: MouseEvent): void {
                     class="player-choice__option"
                     :aria-disabled="revealing || isDrawing || isScrambling"
                     :aria-label="settled[index]
-                        ? `${candidate.name} — ${eraLabel(candidate)}${recommendedId === candidate.id ? ' — Recommended' : ''}`
+                        ? `${candidate.name} — ${eraLabel(candidate)}${ruledOutId === candidate.id ? ' — Hint: avoid' : ''}`
                         : 'Loading option'"
                     :class="{
                         'player-choice__option--picked': pickedId === candidate.id,
                         'player-choice__option--scrambling': !settled[index],
-                        'player-choice__option--recommended': recommendedId === candidate.id,
+                        'player-choice__option--ruled-out': ruledOutId === candidate.id,
                     }"
                     type="button"
                     @click="handlePick(candidate)"
                 >
                     <span aria-hidden="true" class="player-choice__name">
                         {{ displayNames[index] }}
-                        <span v-if="recommendedId === candidate.id" class="player-choice__recommended-badge">Hint</span>
+                        <span v-if="ruledOutId === candidate.id" class="player-choice__ruled-out-badge">Avoid</span>
                     </span>
                     <span aria-hidden="true" class="player-choice__meta">{{ displayMeta[index] }}</span>
                 </button>
@@ -428,7 +429,7 @@ function handleBackdropClick(event: MouseEvent): void {
             <button
                 class="player-choice__hint"
                 :class="{ 'player-choice__hint--loading': hintLoading }"
-                :aria-disabled="hintsLeft <= 0 || revealing || isDrawing || isScrambling || !!recommendedId"
+                :aria-disabled="hintsLeft <= 0 || hintLocked || revealing || isDrawing || isScrambling || !!ruledOutId"
                 type="button"
                 @click="handleHint"
             >
@@ -441,7 +442,7 @@ function handleBackdropClick(event: MouseEvent): void {
                         stroke-width="2"
                     />
                 </svg>
-                Hint ({{ hintsLeft }} left)
+                {{ hintLocked && hintsLeft > 0 ? 'Hint (locked)' : `Hint (${hintsLeft} left)` }}
             </button>
         </div>
     </dialog>
@@ -759,15 +760,17 @@ function handleBackdropClick(event: MouseEvent): void {
     }
 }
 
-// Highlights whichever option a hint recommended — primary border on the
-// option itself, plus a small badge next to its name so the reason is
-// explicit, not just an unexplained color change.
-.player-choice__option--recommended {
-    border-color: var(--color-primary);
+// Marks whichever option a hint ruled out — danger border and a faded
+// look on the option itself, plus a small badge next to its name so the
+// reason is explicit, not just an unexplained color change. Still fully
+// pickable: it's advice, not a lock.
+.player-choice__option--ruled-out {
+    border-color: var(--color-danger);
+    opacity: 0.6;
 }
 
-.player-choice__recommended-badge {
-    background-color: var(--color-primary);
+.player-choice__ruled-out-badge {
+    background-color: var(--color-danger);
     border-radius: var(--radius-sharp);
     color: var(--color-surface);
     font-size: 0.6rem;

@@ -200,17 +200,17 @@ describe('useGame', () => {
         expect(game.state.value!.rerollsLeft).toBe(0);
     });
 
-    it('useHint returns a recommendation and spends the single hint, only on success', async () => {
+    it('useHint returns the ruled-out candidate and spends the single hint, only on success', async () => {
         const game = useGame();
 
         game.startGame('442');
         fetchMock.mockResolvedValueOnce([drawnPlayer('a'), drawnPlayer('b'), drawnPlayer('c')]);
         await game.openSlot('gk');
 
-        fetchMock.mockResolvedValueOnce({ recommendedId: 'b' } satisfies HintResult);
-        const recommended = await game.useHint();
+        fetchMock.mockResolvedValueOnce({ ruledOutId: 'b' } satisfies HintResult);
+        const ruledOut = await game.useHint();
 
-        expect(recommended).toBe('b');
+        expect(ruledOut).toBe('b');
         expect(game.state.value!.hintsLeft).toBe(0);
 
         const secondAttempt = await game.useHint();
@@ -227,9 +227,32 @@ describe('useGame', () => {
         await game.openSlot('gk');
 
         fetchMock.mockRejectedValueOnce(new Error('network drop'));
-        const recommended = await game.useHint();
+        const ruledOut = await game.useHint();
 
-        expect(recommended).toBeNull();
+        expect(ruledOut).toBeNull();
+        expect(game.state.value!.hintsLeft).toBe(1);
+    });
+
+    it('useHint is locked (and unspent) once fewer than 3 slots are open', async () => {
+        const game = useGame();
+
+        game.startGame('442');
+        const slots = game.state.value!.slots;
+
+        for (const slot of slots.slice(0, slots.length - 2)) {
+            slot.player = { id: `filled-${slot.id}`, name: 'Filler', goals: 0, assists: 0 } as never;
+        }
+
+        expect(game.isHintLocked()).toBe(true);
+
+        const openSlotId = slots[slots.length - 1]!.id;
+
+        fetchMock.mockResolvedValueOnce([drawnPlayer('a'), drawnPlayer('b'), drawnPlayer('c')]);
+        await game.openSlot(openSlotId);
+        fetchMock.mockClear();
+
+        expect(await game.useHint()).toBeNull();
+        expect(fetchMock).not.toHaveBeenCalled();
         expect(game.state.value!.hintsLeft).toBe(1);
     });
 
