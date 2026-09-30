@@ -52,7 +52,9 @@ function handleBackdropClick(event: MouseEvent): void {
             </button>
         </div>
 
-        <slot />
+        <div class="centered-dialog__body">
+            <slot />
+        </div>
     </dialog>
 </template>
 
@@ -64,12 +66,22 @@ function handleBackdropClick(event: MouseEvent): void {
     box-shadow: 0 16px 40px rgb(0 0 0 / 25%);
     color: inherit;
     margin: auto;
-    max-height: 80vh;
-    max-width: 26rem;
-    overflow-y: auto;
-    padding: 1.25rem 1.5rem;
+
+    // dvh (with a vh fallback) so mobile browser chrome sliding in and out
+    // doesn't push the bottom of the dialog off-screen.
+    max-height: 85vh;
+    max-height: 85dvh;
+    max-width: 28rem;
+    padding: 0;
     transition: opacity 0.2s ease, overlay 0.2s ease allow-discrete, display 0.2s ease allow-discrete;
-    width: calc(100% - 3rem);
+    width: calc(100% - 2rem);
+}
+
+// Header pinned, body scrolls — so the title and close button stay in
+// reach however far down a long read (How to play, Stats) someone gets.
+.centered-dialog[open] {
+    display: flex;
+    flex-direction: column;
 }
 
 @starting-style {
@@ -107,9 +119,27 @@ function handleBackdropClick(event: MouseEvent): void {
 
 .centered-dialog__header {
     align-items: center;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-foreground) 10%, transparent);
     display: flex;
+    flex-shrink: 0;
     justify-content: space-between;
-    margin-bottom: 0.9rem;
+    padding: 0.75rem 1rem 0.75rem 1.25rem;
+}
+
+.centered-dialog__body {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 1.25rem;
+}
+
+@media (width >= 30rem) {
+    .centered-dialog__header {
+        padding: 1rem 1.25rem 1rem 1.5rem;
+    }
+
+    .centered-dialog__body {
+        padding: 1.25rem 1.5rem 1.5rem;
+    }
 }
 
 .centered-dialog__title {

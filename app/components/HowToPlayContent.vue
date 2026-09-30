@@ -2,68 +2,315 @@
 // Shared between the standalone /how-to-play route (direct-linkable) and the
 // InfoDialog modal opened from AppHeader's info button — the modal is the
 // primary way most people reach this, the route stays for direct links.
+//
+// Laid out as short, scannable sections rather than one long numbered list —
+// most people read this on a phone, mid-game, looking for one specific rule.
+import type { ResultTier } from '../../shared/types';
+import { TIER_BOUNDARIES } from '../utils/scoring';
+
+const TIER_LABELS: Record<ResultTier, string> = {
+    championsLeague: 'Champions League',
+    europaLeague: 'Europa League',
+    midTable: 'Mid-table',
+    avoidedRelegation: 'Avoided relegation',
+    relegated: 'Relegated',
+};
+
+// Built from scoring.ts's own boundaries so the ladder shown here can never
+// drift from what the game actually awards.
+const ladder = TIER_BOUNDARIES.map((boundary, index) => ({
+    tier: boundary.tier,
+    label: TIER_LABELS[boundary.tier],
+    range: Number.isFinite(boundary.maxDistance)
+        ? `within ${boundary.maxDistance}`
+        : `over ${TIER_BOUNDARIES[index - 1]?.maxDistance ?? 0}`,
+}));
 </script>
 
 <template>
-    <ol class="how-to-play-content">
-        <li>
-            <strong>Pick a formation.</strong> The formation's digits become your target number —
-            4-4-2 sets a target of 442, 3-4-3 sets 343, and so on.
-        </li>
-        <li>
-            <strong>Fill all 11 slots.</strong> Click any empty slot in any order. Each one offers
-            3 real players who've played that position — but their stats stay hidden, so you're
-            guessing.
-        </li>
-        <li>
-            <strong>Goals + assists stay hidden until you pick.</strong> The moment you choose a
-            player, their career goals + assists are revealed and added to your running total.
-            There's no way to check first.
-        </li>
-        <li>
-            <strong>Go over the target and it's an immediate bust.</strong> One pick that tips you
-            past the number ends the game right there — no more picks.
-        </li>
-        <li>
-            <strong>Only an exact hit wins.</strong> Land your total exactly on the target and you're
-            crowned <strong>Champion</strong> — the only way to actually win. Anything else that finishes
-            without busting lands on a league table instead, based on how far off you were: from
-            <strong>Champions League</strong> (a genuine near-miss) down through
-            <strong>Europa League</strong>, <strong>Mid-table</strong> and
-            <strong>Avoided relegation</strong>, to <strong>Relegated</strong> for the finishes
-            that missed by the widest margin.
-        </li>
-        <li>
-            <strong>Daily Challenge and challenge links can set a different objective.</strong> The rules
-            above are classic mode's — always an exact hit. A Daily or challenge board sometimes swaps
-            that for something else instead: <strong>score over</strong> a number, <strong>stay
-            under</strong> it, or <strong>keep every player's own total under</strong> it. Whatever
-            today's board is actually asking for is always shown at the top — check that first, since
-            the immediate-bust rule above only applies when it's asking for an exact hit.
-        </li>
-        <li>
-            <strong>One reroll per game.</strong> If you don't like the 3 options on a slot, you can
-            redraw them once, for any single slot, at any point in the game.
-        </li>
-        <li>
-            <strong>One hint per game.</strong> Stuck on a pick? Hint rules out whichever of the 3
-            offered players does the most damage to your chances — the call between the other two is
-            still yours. It locks once only 2 slots are left, so don't save it too long.
-        </li>
-        <li>
-            <strong>No repeat players.</strong> Once a player has been offered — picked or not —
-            they won't turn up again for the rest of that game.
-        </li>
-    </ol>
+    <div class="how-to-play-content">
+        <section class="how-to-play-content__section">
+            <h3 class="how-to-play-content__heading">The aim</h3>
+            <div class="how-to-play-content__aim">
+                <div aria-hidden="true" class="how-to-play-content__equation">
+                    <span class="how-to-play-content__formation">4-4-2</span>
+                    <span class="how-to-play-content__arrow">→</span>
+                    <span class="how-to-play-content__target">442</span>
+                </div>
+                <p>
+                    Pick a formation — its digits are your target. Build an XI whose career
+                    <strong>goals + assists</strong> add up to <strong>exactly</strong> that number.
+                </p>
+            </div>
+        </section>
+
+        <section class="how-to-play-content__section">
+            <h3 class="how-to-play-content__heading">Each pick</h3>
+            <ol class="how-to-play-content__steps">
+                <li><span><strong>Tap any empty slot</strong>, in any order.</span></li>
+                <li><span><strong>Choose 1 of 3 real players</strong> for that position — their stats stay hidden.</span></li>
+                <li><span><strong>See the reveal.</strong> Their goals + assists go on your running total.</span></li>
+            </ol>
+            <p class="how-to-play-content__note">
+                Once a player's been offered, picked or not, they won't turn up again that game.
+            </p>
+        </section>
+
+        <section class="how-to-play-content__section">
+            <h3 class="how-to-play-content__heading">How it ends</h3>
+            <ul class="how-to-play-content__outcomes">
+                <li class="how-to-play-content__outcome how-to-play-content__outcome--win">
+                    <span class="how-to-play-content__outcome-name">Exact hit</span>
+                    <span><strong>Champion</strong> — the only true win.</span>
+                </li>
+                <li class="how-to-play-content__outcome how-to-play-content__outcome--bust">
+                    <span class="how-to-play-content__outcome-name">Go over</span>
+                    <span><strong>Bust</strong> — game over on the spot.</span>
+                </li>
+            </ul>
+            <p class="how-to-play-content__note">Finish under the target and you land on the table instead:</p>
+            <ol class="how-to-play-content__ladder">
+                <li
+                    v-for="row in ladder"
+                    :key="row.tier"
+                    class="how-to-play-content__rung"
+                    :class="`how-to-play-content__rung--${row.tier}`"
+                >
+                    <span>{{ row.label }}</span>
+                    <span class="how-to-play-content__rung-range">{{ row.range }}</span>
+                </li>
+            </ol>
+        </section>
+
+        <section class="how-to-play-content__section">
+            <h3 class="how-to-play-content__heading">Help, once per game</h3>
+            <div class="how-to-play-content__helpers">
+                <div class="how-to-play-content__helper">
+                    <strong>Reroll</strong>
+                    <p>Don't like the 3 options? Redraw them — on any one slot.</p>
+                </div>
+                <div class="how-to-play-content__helper">
+                    <strong>Hint</strong>
+                    <p>Rules out the riskiest of the 3. Locks once only 2 slots are left.</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="how-to-play-content__section how-to-play-content__section--callout">
+            <h3 class="how-to-play-content__heading">Daily &amp; challenge boards</h3>
+            <p>
+                These can swap the exact target for a different objective — <strong>score over</strong>
+                it, <strong>stay under</strong> it, or <strong>keep every player under</strong> it.
+                Check the top of the board first; busting on the spot only applies to exact targets.
+            </p>
+        </section>
+    </div>
 </template>
 
 <style lang="scss" scoped>
 .how-to-play-content {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: 1.5rem;
     line-height: 1.5;
+
+    p {
+        margin: 0;
+    }
+}
+
+.how-to-play-content__section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
+
+.how-to-play-content__heading {
+    color: var(--color-primary);
+    font-family: var(--font-body);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
     margin: 0;
-    padding-left: 1.25rem;
+    text-transform: uppercase;
+}
+
+.how-to-play-content__aim {
+    align-items: center;
+    display: flex;
+    gap: 1rem;
+}
+
+.how-to-play-content__equation {
+    align-items: center;
+    background-color: var(--color-primary);
+    color: var(--color-surface);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    padding: 0.5rem 0.75rem;
+    text-align: center;
+}
+
+.how-to-play-content__formation {
+    font-size: 0.75rem;
+    font-weight: 600;
+    opacity: 0.8;
+}
+
+.how-to-play-content__arrow {
+    font-size: 0.7rem;
+    line-height: 1;
+    opacity: 0.6;
+    transform: rotate(90deg);
+}
+
+.how-to-play-content__target {
+    font-family: var(--font-display);
+    font-size: 1.6rem;
+    font-weight: 700;
+    line-height: 1.1;
+}
+
+.how-to-play-content__steps {
+    counter-reset: step;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+
+    li {
+        align-items: baseline;
+        counter-increment: step;
+        display: flex;
+        gap: 0.65rem;
+    }
+
+    li::before {
+        align-items: center;
+        border: 1px solid var(--color-primary);
+        color: var(--color-primary);
+        content: counter(step);
+        display: inline-flex;
+        flex-shrink: 0;
+        font-size: 0.75rem;
+        font-weight: 700;
+        height: 1.4rem;
+        justify-content: center;
+        width: 1.4rem;
+    }
+}
+
+.how-to-play-content__note {
+    color: color-mix(in srgb, var(--color-foreground) 70%, transparent);
+    font-size: 0.85rem;
+}
+
+.how-to-play-content__outcomes {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.how-to-play-content__outcome {
+    align-items: baseline;
+    border-left: 3px solid;
+    display: flex;
+    gap: 0.75rem;
+    padding: 0.35rem 0 0.35rem 0.65rem;
+}
+
+.how-to-play-content__outcome--win {
+    background-color: color-mix(in srgb, var(--color-primary) 8%, transparent);
+    border-color: var(--color-primary);
+}
+
+.how-to-play-content__outcome--bust {
+    background-color: color-mix(in srgb, var(--color-danger) 8%, transparent);
+    border-color: var(--color-danger);
+}
+
+.how-to-play-content__outcome-name {
+    flex: 0 0 5rem;
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+.how-to-play-content__ladder {
+    border: 1px solid color-mix(in srgb, var(--color-foreground) 12%, transparent);
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.how-to-play-content__rung {
+    border-left: 3px solid;
+    display: flex;
+    font-size: 0.88rem;
+    justify-content: space-between;
+    padding: 0.4rem 0.65rem;
+}
+
+.how-to-play-content__rung + .how-to-play-content__rung {
+    border-top: 1px solid color-mix(in srgb, var(--color-foreground) 8%, transparent);
+}
+
+.how-to-play-content__rung-range {
+    color: color-mix(in srgb, var(--color-foreground) 60%, transparent);
+    font-size: 0.8rem;
+    font-variant-numeric: tabular-nums;
+}
+
+// Same progression as StatsDialog's/ResultPanel's tier colors — built from
+// the same 3 tokens, not arbitrary per-tier hexes.
+.how-to-play-content__rung--championsLeague {
+    border-left-color: color-mix(in srgb, var(--color-primary) 85%, var(--color-foreground) 15%);
+}
+
+.how-to-play-content__rung--europaLeague {
+    border-left-color: color-mix(in srgb, var(--color-primary) 55%, var(--color-foreground) 45%);
+}
+
+.how-to-play-content__rung--midTable {
+    border-left-color: color-mix(in srgb, var(--color-foreground) 35%, transparent);
+}
+
+.how-to-play-content__rung--avoidedRelegation {
+    border-left-color: color-mix(in srgb, var(--color-danger) 55%, var(--color-foreground) 45%);
+}
+
+.how-to-play-content__rung--relegated {
+    border-left-color: color-mix(in srgb, var(--color-danger) 80%, var(--color-foreground) 20%);
+}
+
+.how-to-play-content__helpers {
+    display: grid;
+    gap: 0.5rem;
+    grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+}
+
+.how-to-play-content__helper {
+    border: 1px solid color-mix(in srgb, var(--color-foreground) 15%, transparent);
+    display: flex;
+    flex-direction: column;
+    font-size: 0.85rem;
+    gap: 0.25rem;
+    padding: 0.65rem 0.75rem;
+
+    strong {
+        color: var(--color-primary);
+        font-size: 0.9rem;
+    }
+}
+
+.how-to-play-content__section--callout {
+    background-color: color-mix(in srgb, var(--color-foreground) 5%, transparent);
+    font-size: 0.88rem;
+    padding: 0.85rem 1rem;
 }
 </style>

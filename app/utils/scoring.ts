@@ -38,7 +38,7 @@ export function getDistance(total: number, target: number): number {
 //   avoidedRelegation <= 300 (< p90)  — next band
 //   relegated       otherwise         — the worst ~10%, reserved for finishes
 //                                       further out than 90% of all finishes
-const TIER_BOUNDARIES: ReadonlyArray<{ tier: ResultTier; maxDistance: number }> = [
+export const TIER_BOUNDARIES: ReadonlyArray<{ tier: ResultTier; maxDistance: number }> = [
     { tier: 'championsLeague', maxDistance: 25 },
     { tier: 'europaLeague', maxDistance: 75 },
     { tier: 'midTable', maxDistance: 150 },
