@@ -108,6 +108,9 @@ const ladder = TIER_BOUNDARIES.map((boundary, index) => ({
 </template>
 
 <style lang="scss" scoped>
+// Bib & Board: small uppercase section labels, flat surface-2 panels, the
+// target in a pitch-green "board" tile. The exact win is the red moment;
+// a bust is slate (see the rules in app.vue).
 .how-to-play-content {
     display: flex;
     flex-direction: column;
@@ -126,11 +129,12 @@ const ladder = TIER_BOUNDARIES.map((boundary, index) => ({
 }
 
 .how-to-play-content__heading {
-    color: var(--color-primary);
+    color: var(--color-muted);
     font-family: var(--font-body);
     font-size: 0.72rem;
     font-weight: 700;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.1em;
+    line-height: 1.3;
     margin: 0;
     text-transform: uppercase;
 }
@@ -143,33 +147,36 @@ const ladder = TIER_BOUNDARIES.map((boundary, index) => ({
 
 .how-to-play-content__equation {
     align-items: center;
-    background-color: var(--color-primary);
-    color: var(--color-surface);
+    background-color: var(--color-pitch);
+    border-radius: var(--radius-md);
+    color: var(--color-pitch-ink);
     display: flex;
     flex-direction: column;
     flex-shrink: 0;
-    padding: 0.5rem 0.75rem;
+    padding: 0.5rem 0.85rem;
     text-align: center;
 }
 
 .how-to-play-content__formation {
+    font-family: var(--font-mono);
     font-size: 0.75rem;
     font-weight: 600;
-    opacity: 0.8;
+    opacity: 0.85;
 }
 
 .how-to-play-content__arrow {
     font-size: 0.7rem;
     line-height: 1;
-    opacity: 0.6;
+    opacity: 0.7;
     transform: rotate(90deg);
 }
 
 .how-to-play-content__target {
     font-family: var(--font-display);
-    font-size: 1.6rem;
-    font-weight: 700;
-    line-height: 1.1;
+    font-size: 2rem;
+    font-variant-numeric: tabular-nums;
+    font-weight: 900;
+    line-height: 1;
 }
 
 .how-to-play-content__steps {
@@ -190,21 +197,23 @@ const ladder = TIER_BOUNDARIES.map((boundary, index) => ({
 
     li::before {
         align-items: center;
-        border: 1px solid var(--color-primary);
+        background-color: var(--color-surface-2);
+        border-radius: var(--radius-pill);
         color: var(--color-primary);
         content: counter(step);
         display: inline-flex;
         flex-shrink: 0;
-        font-size: 0.75rem;
-        font-weight: 700;
-        height: 1.4rem;
+        font-family: var(--font-display);
+        font-size: 0.95rem;
+        font-weight: 900;
+        height: 1.6rem;
         justify-content: center;
-        width: 1.4rem;
+        width: 1.6rem;
     }
 }
 
 .how-to-play-content__note {
-    color: color-mix(in srgb, var(--color-foreground) 70%, transparent);
+    color: var(--color-muted);
     font-size: 0.85rem;
 }
 
@@ -219,20 +228,21 @@ const ladder = TIER_BOUNDARIES.map((boundary, index) => ({
 
 .how-to-play-content__outcome {
     align-items: baseline;
-    border-left: 3px solid;
+    border-left: 4px solid;
+    border-radius: var(--radius-sm);
     display: flex;
     gap: 0.75rem;
-    padding: 0.35rem 0 0.35rem 0.65rem;
+    padding: 0.5rem 0.75rem;
 }
 
 .how-to-play-content__outcome--win {
-    background-color: color-mix(in srgb, var(--color-primary) 8%, transparent);
-    border-color: var(--color-primary);
+    background-color: color-mix(in srgb, var(--color-bib) 9%, transparent);
+    border-color: var(--color-bib);
 }
 
 .how-to-play-content__outcome--bust {
-    background-color: color-mix(in srgb, var(--color-danger) 8%, transparent);
-    border-color: var(--color-danger);
+    background-color: color-mix(in srgb, var(--color-bust) 10%, transparent);
+    border-color: var(--color-bust);
 }
 
 .how-to-play-content__outcome-name {
@@ -242,50 +252,67 @@ const ladder = TIER_BOUNDARIES.map((boundary, index) => ({
 }
 
 .how-to-play-content__ladder {
-    border: 1px solid color-mix(in srgb, var(--color-foreground) 12%, transparent);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-md);
     list-style: none;
     margin: 0;
+    overflow: hidden;
     padding: 0;
 }
 
 .how-to-play-content__rung {
-    border-left: 3px solid;
+    align-items: center;
     display: flex;
     font-size: 0.88rem;
-    justify-content: space-between;
-    padding: 0.4rem 0.65rem;
+    font-weight: 600;
+    gap: 0.6rem;
+    padding: 0.5rem 0.75rem;
+}
+
+// A tier-coloured dot rather than a full fill, so the ladder stays calm
+// and readable in both schemes.
+.how-to-play-content__rung::before {
+    background-color: var(--rung-color);
+    border-radius: var(--radius-pill);
+    content: '';
+    flex-shrink: 0;
+    height: 0.6rem;
+    width: 0.6rem;
 }
 
 .how-to-play-content__rung + .how-to-play-content__rung {
-    border-top: 1px solid color-mix(in srgb, var(--color-foreground) 8%, transparent);
+    border-top: 1px solid var(--color-line);
 }
 
 .how-to-play-content__rung-range {
-    color: color-mix(in srgb, var(--color-foreground) 60%, transparent);
-    font-size: 0.8rem;
+    color: var(--color-muted);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
     font-variant-numeric: tabular-nums;
+    font-weight: 500;
+    margin-left: auto;
 }
 
-// Same progression as StatsDialog's/ResultPanel's tier colors — built from
-// the same 3 tokens, not arbitrary per-tier hexes.
+// The shared --tier-* ladder from app.vue, so this matches StatsDialog and
+// ResultPanel.
 .how-to-play-content__rung--championsLeague {
-    border-left-color: color-mix(in srgb, var(--color-primary) 85%, var(--color-foreground) 15%);
+    --rung-color: var(--tier-cl);
 }
 
 .how-to-play-content__rung--europaLeague {
-    border-left-color: color-mix(in srgb, var(--color-primary) 55%, var(--color-foreground) 45%);
+    --rung-color: var(--tier-el);
 }
 
 .how-to-play-content__rung--midTable {
-    border-left-color: color-mix(in srgb, var(--color-foreground) 35%, transparent);
+    --rung-color: var(--tier-mid);
 }
 
 .how-to-play-content__rung--avoidedRelegation {
-    border-left-color: color-mix(in srgb, var(--color-danger) 55%, var(--color-foreground) 45%);
+    --rung-color: var(--tier-avoided);
 }
 
 .how-to-play-content__rung--relegated {
-    border-left-color: color-mix(in srgb, var(--color-danger) 80%, var(--color-foreground) 20%);
+    --rung-color: var(--tier-relegated);
 }
 
 .how-to-play-content__helpers {
@@ -295,21 +322,27 @@ const ladder = TIER_BOUNDARIES.map((boundary, index) => ({
 }
 
 .how-to-play-content__helper {
-    border: 1px solid color-mix(in srgb, var(--color-foreground) 15%, transparent);
+    background-color: var(--color-surface-2);
+    border-radius: var(--radius-md);
     display: flex;
     flex-direction: column;
     font-size: 0.85rem;
     gap: 0.25rem;
-    padding: 0.65rem 0.75rem;
+    padding: 0.75rem 0.85rem;
 
     strong {
         color: var(--color-primary);
-        font-size: 0.9rem;
+        font-family: var(--font-display);
+        font-size: 1.05rem;
+        font-weight: 800;
+        letter-spacing: 0.02em;
+        text-transform: var(--display-text-transform);
     }
 }
 
 .how-to-play-content__section--callout {
-    background-color: color-mix(in srgb, var(--color-foreground) 5%, transparent);
+    background-color: var(--color-surface-2);
+    border-radius: var(--radius-md);
     font-size: 0.88rem;
     padding: 0.85rem 1rem;
 }

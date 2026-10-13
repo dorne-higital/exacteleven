@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { DrawnPlayer, PositionGroup } from '../../shared/types';
+import { describeSlotRole } from '../utils/formations';
 import { classifyReveal, pickFlavorLine } from '../utils/reveal-flavor';
 
 const { state, isDrawing, pickPlayer, useReroll, useHint, isHintLocked, closeDialog } = useGame();
@@ -8,11 +9,15 @@ const candidates = computed(() => state.value?.offeredPlayers ?? []);
 const rerollsLeft = computed(() => state.value?.rerollsLeft ?? 0);
 const hintsLeft = computed(() => state.value?.hintsLeft ?? 0);
 const hintLocked = computed(() => isHintLocked());
-// Which currently-offered candidate the last hint ruled out, if any —
-// reset whenever the offered candidates change (see the candidates watcher
-// below), since a stale hint from a previous draw is meaningless once the
-// options themselves have changed.
-const ruledOutId = ref<string | null>(null);
+// Which currently-offered candidate the last hint ruled out, if any. Lives
+// in the game state per slot (useGame clears it whenever that slot gets a
+// new draw, since a stale hint is meaningless once the options change), so
+// closing and reopening the slot still shows it.
+const ruledOutId = computed(() => {
+    const game = state.value;
+
+    return game?.activeSlotId ? game.ruledOutBySlot?.[game.activeSlotId] ?? null : null;
+});
 
 // Player data only tracks the broad GK/DEF/MID/FWD group, not real-world
 // sub-positions — so a "right-back" slot can just as easily offer a
@@ -25,8 +30,29 @@ const POSITION_NOUNS: Record<PositionGroup, string> = {
     FWD: 'forward',
 };
 
+const activeSlot = computed(() => state.value?.slots.find((slot) => slot.id === state.value?.activeSlotId) ?? null);
+
+// The sheet's heading names the slot being filled ("Left-back"), like the
+// handbook's pick mockup, under a small "Pick a player" eyebrow.
+const slotTitle = computed(() => (
+    activeSlot.value ? describeSlotRole(activeSlot.value.group, activeSlot.value.side, activeSlot.value.rowSize) : ''
+));
+
+// "52 to go" — how far the running total is from the target. Only for the
+// classic game and the daily 'exact' objective; the other objective kinds
+// have no single number to count down to.
+const toGo = computed(() => {
+    const game = state.value;
+
+    if (!game || (game.objective && game.objective.kind !== 'exact')) {
+        return null;
+    }
+
+    return Math.max(0, (game.objective?.value ?? game.target) - game.total);
+});
+
 const positionScopeNote = computed(() => {
-    const group = state.value?.slots.find((slot) => slot.id === state.value?.activeSlotId)?.group;
+    const group = activeSlot.value?.group;
     const noun = group ? POSITION_NOUNS[group] : 'player';
     const base = `Any real ${noun} can turn up here — not narrowed to this exact tactical slot.`;
 
@@ -166,7 +192,6 @@ watch(candidates, (items) => {
     if (items.length > 0) {
         startScramble(items);
         pickedId.value = null;
-        ruledOutId.value = null;
     }
 }, { immediate: true });
 
@@ -334,7 +359,7 @@ async function handleHint(): Promise<void> {
     hintLoading.value = true;
 
     try {
-        ruledOutId.value = await useHint();
+        await useHint();
     } finally {
         hintLoading.value = false;
     }
@@ -343,13 +368,15 @@ async function handleHint(): Promise<void> {
 // Fires on Escape as well as our own programmatic close() above — either way,
 // clear the shared game state so play.vue stops rendering this dialog and
 // (per the native <dialog> contract) focus returns to the slot that opened it.
+// closeDialog() keeps this slot's candidates, so tapping it again reopens
+// the same options rather than drawing new ones for free.
 function handleNativeClose(): void {
     closeDialog();
 }
 
 // A click that lands on the <dialog> element itself (not a descendant) means
 // it hit the backdrop area, not the content — the native way to detect a
-// click-outside on a <dialog>. Same discard-the-offer behavior Escape
+// click-outside on a <dialog>. Same close-but-keep-the-offer behavior Escape
 // already triggers via handleNativeClose above.
 function handleBackdropClick(event: MouseEvent): void {
     if (event.target === dialogRef.value) {
@@ -362,7 +389,15 @@ function handleBackdropClick(event: MouseEvent): void {
     <dialog ref="dialogRef" :aria-labelledby="titleId" class="player-choice" @click="handleBackdropClick" @close="handleNativeClose">
         <div aria-hidden="true" class="player-choice__handle" />
 
-        <h2 :id="titleId" class="player-choice__title">Pick a player</h2>
+        <div class="player-choice__top">
+            <h2 :id="titleId" class="player-choice__title">
+                <span class="player-choice__eyebrow">Pick a player</span>
+                <span v-if="slotTitle" class="player-choice__slot">{{ slotTitle }}</span>
+            </h2>
+            <span v-if="toGo !== null && !showResult" class="player-choice__to-go">
+                <span class="player-choice__to-go-value">{{ toGo }}</span> to go
+            </span>
+        </div>
 
         <p aria-live="polite" class="player-choice__sr-announcement">{{ srAnnouncement }}</p>
 
@@ -384,11 +419,10 @@ function handleBackdropClick(event: MouseEvent): void {
                     type="button"
                     @click="handlePick(candidate)"
                 >
-                    <span aria-hidden="true" class="player-choice__name">
-                        {{ displayNames[index] }}
-                        <span v-if="ruledOutId === candidate.id" class="player-choice__ruled-out-badge">Avoid</span>
-                    </span>
+                    <span aria-hidden="true" class="player-choice__name">{{ displayNames[index] }}</span>
                     <span aria-hidden="true" class="player-choice__meta">{{ displayMeta[index] }}</span>
+                    <!-- The hidden stat: "??" until revealed, or the hint's verdict. -->
+                    <span aria-hidden="true" class="player-choice__peek">{{ ruledOutId === candidate.id ? 'Avoid' : '??' }}</span>
                 </button>
             </li>
         </ul>
@@ -401,7 +435,14 @@ function handleBackdropClick(event: MouseEvent): void {
             Couldn't reveal that pick — tap the player again to retry.
         </p>
 
-        <div v-if="showResult" class="player-choice__result">
+        <div
+            v-if="showResult"
+            class="player-choice__result"
+            :class="{
+                'player-choice__result--won': state?.status === 'won',
+                'player-choice__result--bust': state?.status === 'bust',
+            }"
+        >
             <p class="player-choice__result-name">{{ revealedName }}</p>
             <p aria-hidden="true" class="player-choice__result-value">{{ displayValue }}</p>
             <p v-if="revealFlavor" aria-hidden="true" class="player-choice__result-flavor">{{ revealFlavor }}</p>
@@ -423,7 +464,7 @@ function handleBackdropClick(event: MouseEvent): void {
                     <circle cx="8" cy="16" fill="currentColor" r="1.4" />
                     <circle cx="16" cy="16" fill="currentColor" r="1.4" />
                 </svg>
-                Reroll ({{ rerollsLeft }} left)
+                Reroll · {{ rerollsLeft }} left
             </button>
 
             <button
@@ -442,31 +483,36 @@ function handleBackdropClick(event: MouseEvent): void {
                         stroke-width="2"
                     />
                 </svg>
-                {{ hintLocked && hintsLeft > 0 ? 'Hint (locked)' : `Hint (${hintsLeft} left)` }}
+                {{ hintLocked && hintsLeft > 0 ? 'Hint (locked)' : `Hint · ${hintsLeft} left` }}
             </button>
         </div>
     </dialog>
 </template>
 
 <style lang="scss" scoped>
-// Mobile-first bottom sheet: full-width, anchored to the bottom edge, slides
-// up on open. `@starting-style` + `allow-discrete` animate the native
-// <dialog>'s entry into the top layer — the standard way to transition a
-// dialog's open state without giving up showModal()'s built-in focus trap.
+// "Bib & Board" pick sheet (the handbook's pick mockup). Mobile-first bottom
+// sheet: full-width, anchored to the bottom edge, slides up on open.
+// `@starting-style` + `allow-discrete` animate the native <dialog>'s entry
+// into the top layer — the standard way to transition a dialog's open state
+// without giving up showModal()'s built-in focus trap.
 .player-choice {
-    background-color: var(--color-surface);
-    border: 1px solid color-mix(in srgb, var(--color-foreground) 15%, transparent);
-    border-radius: var(--radius-sharp);
-    box-shadow: 0 -12px 32px rgb(0 0 0 / 45%);
-    color: inherit;
+    background-color: var(--color-background);
+    border: 1px solid var(--color-line);
+    border-bottom: 0;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    box-shadow: var(--shadow-lg);
+    box-sizing: border-box;
+    color: var(--color-foreground);
     inset: auto 0 0;
     margin: 0;
     max-height: 85vh;
+    max-height: 85dvh;
+    max-width: 100%;
     overflow-y: auto;
-    padding: 0.75rem 1.25rem calc(1.25rem + env(safe-area-inset-bottom, 0px));
+    padding: 0.6rem calc(1rem + env(safe-area-inset-right, 0px)) calc(1.25rem + env(safe-area-inset-bottom, 0px)) calc(1rem + env(safe-area-inset-left, 0px));
     position: fixed;
     transform: translateY(0);
-    transition: transform 0.28s ease, overlay 0.28s ease allow-discrete, display 0.28s ease allow-discrete;
+    transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1), overlay 0.28s ease allow-discrete, display 0.28s ease allow-discrete;
     width: 100%;
 }
 
@@ -478,15 +524,15 @@ function handleBackdropClick(event: MouseEvent): void {
 
 // Above phone width: a centered, width-capped panel rather than an
 // edge-to-edge sheet stretched across a wide viewport — still bottom-anchored
-// and still slides up, just reads as a deliberate panel, not a blown-up
-// mobile component.
+// and still slides up, just reads as a deliberate panel.
 @media (width >= 640px) {
     .player-choice {
-        border-radius: var(--radius-sharp);
+        border-bottom: 1px solid var(--color-line);
+        border-radius: var(--radius-lg);
         bottom: 2rem;
         left: 50%;
         max-width: 26rem;
-        padding-bottom: 1.25rem;
+        padding: 1.25rem;
         right: auto;
         transform: translateX(-50%) translateY(0);
         width: calc(100% - 4rem);
@@ -505,8 +551,8 @@ function handleBackdropClick(event: MouseEvent): void {
     }
 }
 
-// The MP-Picker board's scrim is a translucent --color-primary-strong
-// (green-deep), not plain black — color-mix keeps it token-driven.
+// The scrim is a translucent --color-primary-strong (deep pitch green), not
+// plain black — color-mix keeps it token-driven.
 .player-choice::backdrop {
     background-color: color-mix(in srgb, var(--color-primary-strong) 55%, transparent);
     transition: overlay 0.28s ease allow-discrete, display 0.28s ease allow-discrete, opacity 0.28s ease;
@@ -529,9 +575,9 @@ function handleBackdropClick(event: MouseEvent): void {
 }
 
 .player-choice__handle {
-    background-color: color-mix(in srgb, var(--color-foreground) 25%, transparent);
-    border-radius: var(--radius-sharp);
-    height: 0.25rem;
+    background-color: var(--color-line);
+    border-radius: var(--radius-pill);
+    height: 0.3rem;
     margin: 0 auto 0.75rem;
     width: 2.5rem;
 }
@@ -542,10 +588,52 @@ function handleBackdropClick(event: MouseEvent): void {
     }
 }
 
+.player-choice__top {
+    align-items: flex-end;
+    display: flex;
+    gap: 0.75rem;
+    justify-content: space-between;
+    margin-bottom: 0.4rem;
+}
+
 .player-choice__title {
-    font-family: var(--font-display);
-    font-size: 1rem;
-    margin: 0 0 0.4rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    margin: 0;
+    min-width: 0;
+}
+
+.player-choice__eyebrow {
+    color: var(--color-muted);
+    font-family: var(--font-body);
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+}
+
+.player-choice__slot {
+    font-size: 1.75rem;
+    font-weight: 900;
+    line-height: 1;
+}
+
+.player-choice__to-go {
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-pill);
+    color: var(--color-muted);
+    flex-shrink: 0;
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 0.3rem 0.7rem;
+    white-space: nowrap;
+}
+
+.player-choice__to-go-value {
+    color: var(--color-foreground);
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
 }
 
 // Visually hidden but always present (not v-if'd) so screen readers pick up
@@ -564,15 +652,17 @@ function handleBackdropClick(event: MouseEvent): void {
 }
 
 .player-choice__scope-note {
-    color: color-mix(in srgb, var(--color-foreground) 70%, transparent);
+    color: var(--color-muted);
     font-size: 0.75rem;
-    margin: 0 0 0.9rem;
+    margin: 0 0 0.85rem;
 }
 
+// Errors are amber, not red — red is reserved for celebration and the CTA.
 .player-choice__error {
-    background-color: color-mix(in srgb, var(--color-danger) 12%, transparent);
-    border-radius: var(--radius-sharp);
-    color: var(--color-danger);
+    background-color: color-mix(in srgb, var(--color-amber) 12%, var(--color-surface));
+    border: 1px solid color-mix(in srgb, var(--color-amber) 40%, transparent);
+    border-radius: var(--radius-md);
+    color: var(--color-foreground);
     font-size: 0.85rem;
     font-weight: 600;
     margin: 0.75rem 0 0;
@@ -588,18 +678,29 @@ function handleBackdropClick(event: MouseEvent): void {
     padding: 0;
 }
 
+// A card per candidate: name over club/era on the left, the hidden stat
+// ("??") as a mono tile on the right.
 .player-choice__option {
-    background-color: color-mix(in srgb, var(--color-foreground) 6%, transparent);
-    border: 1px solid color-mix(in srgb, var(--color-foreground) 15%, transparent);
-    border-radius: var(--radius-sharp);
+    align-items: center;
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-sm);
     color: inherit;
     cursor: pointer;
-    display: flex;
-    flex-direction: column;
-    gap: 0.15rem;
-    padding: 0.75rem 1rem;
+    display: grid;
+    font: inherit;
+    gap: 0.1rem 0.75rem;
+    grid-template-columns: 1fr auto;
+    min-height: 3.75rem;
+    padding: 0.65rem 0.7rem 0.65rem 1rem;
     text-align: left;
+    transition: border-color 0.15s ease, transform 0.15s ease;
     width: 100%;
+}
+
+.player-choice__option:not([aria-disabled='true']):active {
+    transform: scale(0.985);
 }
 
 // aria-disabled, not the native disabled attribute: disabled would blur the
@@ -609,7 +710,7 @@ function handleBackdropClick(event: MouseEvent): void {
 // close time). Staying focusable keeps that native behavior intact.
 .player-choice__option[aria-disabled='true'] {
     cursor: default;
-    opacity: 0.6;
+    opacity: 0.55;
     pointer-events: none;
 }
 
@@ -618,26 +719,73 @@ function handleBackdropClick(event: MouseEvent): void {
     border-color: var(--color-primary);
 }
 
-// Overrides the generic dimmed-disabled look above for specifically the
-// option the player tapped, so it stays visually confirmed rather than
-// fading identically to the two they didn't choose.
+// The option the player tapped is the active state — bib red — so it stays
+// visually confirmed rather than fading identically to the two they didn't
+// choose.
 .player-choice__option--picked[aria-disabled='true'] {
-    background-color: color-mix(in srgb, var(--color-primary) 12%, transparent);
-    border-color: var(--color-primary);
+    background-color: color-mix(in srgb, var(--color-bib) 8%, var(--color-surface));
+    border-color: var(--color-bib);
     opacity: 1;
 }
 
 .player-choice__name {
-    font-weight: 600;
+    font-size: 1rem;
+    font-weight: 700;
+    grid-column: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-.player-choice__option--scrambling .player-choice__name {
-    color: color-mix(in srgb, var(--color-foreground) 70%, transparent);
+.player-choice__option--scrambling .player-choice__name,
+.player-choice__option--scrambling .player-choice__meta {
+    color: var(--color-muted);
 }
 
 .player-choice__meta {
-    color: color-mix(in srgb, var(--color-foreground) 70%, transparent);
+    color: var(--color-muted);
     font-size: 0.75rem;
+    grid-column: 1;
+    min-width: 0;
+}
+
+.player-choice__peek {
+    align-items: center;
+    background-color: var(--color-surface-2);
+    border-radius: var(--radius-md);
+    color: var(--color-muted);
+    display: flex;
+    font-family: var(--font-mono);
+    font-size: 1.05rem;
+    font-weight: 700;
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    height: 2.5rem;
+    justify-content: center;
+    min-width: 3rem;
+    padding: 0 0.4rem;
+}
+
+.player-choice__option--picked .player-choice__peek {
+    background-color: var(--color-bib);
+    color: var(--color-on-bib);
+}
+
+// Whichever option a hint ruled out: an amber warning (not red — that's
+// celebratory here), the tile reading "Avoid" so the reason is explicit, not
+// just an unexplained colour change. Still fully pickable: it's advice.
+.player-choice__option--ruled-out {
+    border-color: color-mix(in srgb, var(--color-amber) 60%, transparent);
+}
+
+.player-choice__option--ruled-out .player-choice__peek {
+    background-color: color-mix(in srgb, var(--color-amber) 22%, var(--color-surface));
+    color: var(--color-foreground);
+    font-family: var(--font-body);
+    font-size: 0.7rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
 }
 
 .player-choice__result {
@@ -645,52 +793,65 @@ function handleBackdropClick(event: MouseEvent): void {
     display: flex;
     flex-direction: column;
     gap: 0.35rem;
-    padding: 1.5rem 0;
+    padding: 1.25rem 0 0.75rem;
 }
 
 .player-choice__result-name {
     font-size: 1rem;
-    font-weight: 600;
+    font-weight: 700;
     margin: 0;
 }
 
 .player-choice__result-value {
     font-family: var(--font-display);
-    font-size: 2.5rem;
-    font-weight: 700;
+    font-size: 4rem;
+    font-variant-numeric: tabular-nums;
+    font-weight: 900;
+    line-height: 1;
     margin: 0;
 }
 
+// The pick that lands the target exactly is the red moment; one that goes
+// over is slate, never red.
+.player-choice__result--won .player-choice__result-value {
+    color: var(--color-bib);
+}
+
+.player-choice__result--bust .player-choice__result-value {
+    color: var(--color-bust);
+}
+
 .player-choice__result-flavor {
-    color: color-mix(in srgb, var(--color-foreground) 70%, transparent);
-    font-size: 0.8rem;
+    color: var(--color-muted);
+    font-size: 0.85rem;
     margin: 0;
+    text-align: center;
 }
 
 .player-choice__actions {
     display: flex;
     gap: 0.5rem;
-    margin-top: 0.5rem;
+    margin-top: 0.75rem;
 }
 
-// A bordered pill rather than a plain underlined text link — gives each
-// icon something to sit in and makes both actions read as distinct,
-// tappable pills rather than incidental fine print. flex: 1 1 0 splits the
-// row evenly between Reroll and Hint.
+// Quiet ghost buttons (white surface, hairline) — the sheet's real action is
+// tapping a player. flex: 1 1 0 splits the row evenly between Reroll and Hint.
 .player-choice__reroll,
 .player-choice__hint {
     align-items: center;
-    background-color: color-mix(in srgb, var(--color-foreground) 6%, transparent);
-    border: 1px solid color-mix(in srgb, var(--color-foreground) 15%, transparent);
-    border-radius: var(--radius-sharp);
-    color: color-mix(in srgb, var(--color-foreground) 80%, transparent);
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-md);
+    color: var(--color-foreground);
     cursor: pointer;
     display: flex;
     flex: 1 1 0;
-    font-size: 0.78rem;
-    font-weight: 600;
+    font: inherit;
+    font-size: 0.82rem;
+    font-weight: 700;
     gap: 0.4rem;
     justify-content: center;
+    min-height: var(--tap-min);
     padding: 0.5rem 0.6rem;
     text-align: center;
     transition: border-color 0.15s ease;
@@ -754,31 +915,13 @@ function handleBackdropClick(event: MouseEvent): void {
 }
 
 @media (prefers-reduced-motion: reduce) {
+    .player-choice__option {
+        transition: none;
+    }
+
     .player-choice__reroll--rolling .player-choice__dice,
     .player-choice__hint--loading .player-choice__hint-icon {
         animation: none;
     }
-}
-
-// Marks whichever option a hint ruled out — danger border and a faded
-// look on the option itself, plus a small badge next to its name so the
-// reason is explicit, not just an unexplained color change. Still fully
-// pickable: it's advice, not a lock.
-.player-choice__option--ruled-out {
-    border-color: var(--color-danger);
-    opacity: 0.6;
-}
-
-.player-choice__ruled-out-badge {
-    background-color: var(--color-danger);
-    border-radius: var(--radius-sharp);
-    color: var(--color-surface);
-    font-size: 0.6rem;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    margin-left: 0.4rem;
-    padding: 0.1rem 0.45rem;
-    text-transform: uppercase;
-    vertical-align: middle;
 }
 </style>

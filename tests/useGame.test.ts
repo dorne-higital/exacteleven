@@ -31,6 +31,11 @@ const fetchMock = vi.fn();
 beforeEach(() => {
     stateStore.clear();
     fetchMock.mockReset();
+    // The in-progress game persists to localStorage now (with a one-time
+    // migration from the old sessionStorage key) — wipe both so no test
+    // resumes another's game.
+    window.localStorage.clear();
+    window.sessionStorage.clear();
     vi.stubGlobal('useState', fakeUseState);
     vi.stubGlobal('$fetch', fetchMock);
     // useGame.ts calls useStats() by its Nuxt auto-import name — the real
@@ -121,19 +126,22 @@ describe('useGame', () => {
         expect(game.state.value!.status).toBe('bust');
     });
 
-    it('pickPlayer returns "timeout" (and leaves the slot open) on a 410 without touching game state', async () => {
+    it('pickPlayer returns null (and leaves the slot open) when a 410\'s token refresh itself fails, without touching game state', async () => {
         const game = useGame();
 
         game.startGame('442');
         fetchMock.mockResolvedValueOnce([drawnPlayer('a'), drawnPlayer('b'), drawnPlayer('c')]);
         await game.openSlot('gk');
 
-        fetchMock.mockRejectedValueOnce({ statusCode: 410 });
+        fetchMock
+            .mockRejectedValueOnce({ statusCode: 410 })
+            .mockRejectedValueOnce(new TypeError('network drop'));
         const result = await game.pickPlayer(drawnPlayer('a'));
 
-        expect(result).toBe('timeout');
+        expect(result).toBeNull();
         expect(game.state.value!.slots.find((slot) => slot.id === 'gk')!.player).toBeNull();
         expect(game.state.value!.status).toBe('playing');
+        expect(game.state.value!.offeredPlayers.map((p) => p.id)).toEqual(['a', 'b', 'c']);
     });
 
     it('pickPlayer returns null (and leaves the slot open) on any other failure', async () => {
@@ -267,6 +275,153 @@ describe('useGame', () => {
 
         expect(game.state.value!.activeSlotId).toBeNull();
         expect(game.state.value!.offeredPlayers).toEqual([]);
+        expect(game.state.value!.slots.every((slot) => slot.player === null)).toBe(true);
+    });
+
+    it('reopening a closed slot shows the same 3 candidates without a new draw (no free reroll)', async () => {
+        const game = useGame();
+
+        game.startGame('442');
+        fetchMock.mockResolvedValueOnce([drawnPlayer('a'), drawnPlayer('b'), drawnPlayer('c')]);
+        await game.openSlot('gk');
+        game.closeDialog();
+        fetchMock.mockClear();
+
+        await game.openSlot('gk');
+
+        expect(fetchMock).not.toHaveBeenCalled();
+        expect(game.state.value!.activeSlotId).toBe('gk');
+        expect(game.state.value!.offeredPlayers.map((p) => p.id)).toEqual(['a', 'b', 'c']);
+        expect(game.state.value!.rerollsLeft).toBe(1);
+    });
+
+    it('keeps each slot\'s candidates separately, and the reroll is still the only way to change them', async () => {
+        const game = useGame();
+
+        game.startGame('442');
+        fetchMock.mockResolvedValueOnce([drawnPlayer('a'), drawnPlayer('b'), drawnPlayer('c')]);
+        await game.openSlot('gk');
+        fetchMock.mockResolvedValueOnce([drawnPlayer('d'), drawnPlayer('e'), drawnPlayer('f')]);
+        await game.useReroll();
+        game.closeDialog();
+
+        const defenderId = game.state.value!.slots.find((slot) => slot.group === 'DEF')!.id;
+
+        fetchMock.mockResolvedValueOnce([drawnPlayer('g'), drawnPlayer('h'), drawnPlayer('i')]);
+        await game.openSlot(defenderId);
+        game.closeDialog();
+        fetchMock.mockClear();
+
+        await game.openSlot('gk');
+        expect(game.state.value!.offeredPlayers.map((p) => p.id)).toEqual(['d', 'e', 'f']);
+        game.closeDialog();
+
+        await game.openSlot(defenderId);
+        expect(game.state.value!.offeredPlayers.map((p) => p.id)).toEqual(['g', 'h', 'i']);
+        expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('reopening after a reload still shows the same candidates (persisted with the game)', async () => {
+        const game = useGame();
+
+        game.startGame('442');
+        fetchMock.mockResolvedValueOnce([drawnPlayer('a'), drawnPlayer('b'), drawnPlayer('c')]);
+        await game.openSlot('gk');
+        game.closeDialog();
+
+        game.state.value = null;
+        expect(game.resumeGame('442')).toBe(true);
+        fetchMock.mockClear();
+
+        await game.openSlot('gk');
+
+        expect(fetchMock).not.toHaveBeenCalled();
+        expect(game.state.value!.offeredPlayers.map((p) => p.id)).toEqual(['a', 'b', 'c']);
+    });
+
+    it('a filled slot forgets its candidates', async () => {
+        const game = useGame();
+
+        game.startGame('442');
+        fetchMock.mockResolvedValueOnce([drawnPlayer('a'), drawnPlayer('b'), drawnPlayer('c')]);
+        await game.openSlot('gk');
+        fetchMock.mockResolvedValueOnce({ goals: 0, assists: 0 } satisfies RevealResult);
+        await game.pickPlayer(drawnPlayer('a'));
+        game.closeDialog();
+
+        expect(game.state.value!.offeredBySlot?.gk).toBeUndefined();
+    });
+
+    it('the hint\'s ruled-out candidate survives closing and reopening the slot, and clears on a reroll', async () => {
+        const game = useGame();
+
+        game.startGame('442');
+        fetchMock.mockResolvedValueOnce([drawnPlayer('a'), drawnPlayer('b'), drawnPlayer('c')]);
+        await game.openSlot('gk');
+        fetchMock.mockResolvedValueOnce({ ruledOutId: 'b' } satisfies HintResult);
+        await game.useHint();
+        game.closeDialog();
+        await game.openSlot('gk');
+
+        expect(game.state.value!.ruledOutBySlot?.gk).toBe('b');
+
+        fetchMock.mockResolvedValueOnce([drawnPlayer('d'), drawnPlayer('e'), drawnPlayer('f')]);
+        await game.useReroll();
+
+        expect(game.state.value!.ruledOutBySlot?.gk).toBeUndefined();
+    });
+
+    it('pickPlayer re-signs an expired token for the same candidates and retries the reveal', async () => {
+        const game = useGame();
+
+        game.startGame('442');
+        fetchMock.mockResolvedValueOnce([drawnPlayer('a'), drawnPlayer('b'), drawnPlayer('c')]);
+        await game.openSlot('gk');
+
+        fetchMock
+            .mockRejectedValueOnce({ statusCode: 410 })
+            .mockResolvedValueOnce([{ id: 'a', token: 'fresh-a' }, { id: 'b', token: 'fresh-b' }, { id: 'c', token: 'fresh-c' }])
+            .mockResolvedValueOnce({ goals: 2, assists: 1 } satisfies RevealResult);
+
+        const result = await game.pickPlayer(drawnPlayer('a'));
+
+        expect(result).toEqual({ goals: 2, assists: 1 });
+        expect(fetchMock).toHaveBeenCalledWith('/api/refresh-tokens', expect.objectContaining({ method: 'POST' }));
+        expect(fetchMock).toHaveBeenLastCalledWith('/api/reveal', expect.objectContaining({ body: expect.objectContaining({ token: 'fresh-a' }) }));
+        expect(game.state.value!.slots.find((slot) => slot.id === 'gk')!.player?.id).toBe('a');
+    });
+
+    it('pickPlayer falls back to a free fresh draw when the candidates are too old to re-sign', async () => {
+        const game = useGame();
+
+        game.startGame('442');
+        fetchMock.mockResolvedValueOnce([drawnPlayer('a'), drawnPlayer('b'), drawnPlayer('c')]);
+        await game.openSlot('gk');
+
+        fetchMock
+            .mockRejectedValueOnce({ statusCode: 410 })
+            .mockRejectedValueOnce({ statusCode: 410 })
+            .mockResolvedValueOnce([drawnPlayer('x'), drawnPlayer('y'), drawnPlayer('z')]);
+
+        const result = await game.pickPlayer(drawnPlayer('a'));
+
+        expect(result).toBe('timeout');
+        expect(game.state.value!.offeredPlayers.map((p) => p.id)).toEqual(['x', 'y', 'z']);
+        expect(game.state.value!.rerollsLeft).toBe(1);
+        expect(game.state.value!.activeSlotId).toBe('gk');
+    });
+
+    it('a draw failure while offline says so', async () => {
+        const game = useGame();
+        const onLine = vi.spyOn(window.navigator, 'onLine', 'get').mockReturnValue(false);
+
+        game.startGame('442');
+        fetchMock.mockRejectedValueOnce(new TypeError('Load failed'));
+        await game.openSlot('gk');
+
+        expect(game.drawError.value).toBe(true);
+        expect(game.drawErrorMessage.value).toMatch(/offline/i);
+        onLine.mockRestore();
     });
 
     it('resumeGame restores a persisted game for a matching formation, and rejects a mismatched one', () => {
@@ -275,7 +430,7 @@ describe('useGame', () => {
         game.startGame('442');
         const persistedGameId = game.state.value!.gameId;
 
-        // Simulate a fresh mount: nothing in memory, but sessionStorage still
+        // Simulate a fresh mount: nothing in memory, but localStorage still
         // holds the last session's game (writePersistedGame isn't gated
         // behind import.meta.client, so it really did write during startGame
         // above).
@@ -295,6 +450,35 @@ describe('useGame', () => {
         game.reset();
 
         expect(game.state.value).toBeNull();
+        expect(game.resumeGame('442')).toBe(false);
+    });
+
+    it('migrates a game saved by the old sessionStorage version, once', () => {
+        const game = useGame();
+
+        game.startGame('433');
+        const saved = JSON.parse(window.localStorage.getItem('exact-xi-game')!).game;
+
+        window.localStorage.clear();
+        window.sessionStorage.setItem('exact-xi-game', JSON.stringify(saved));
+        game.state.value = null;
+
+        expect(game.resumeGame('433')).toBe(true);
+        expect(game.state.value!.gameId).toBe(saved.gameId);
+        expect(window.sessionStorage.getItem('exact-xi-game')).toBeNull();
+        expect(JSON.parse(window.localStorage.getItem('exact-xi-game')!).game.gameId).toBe(saved.gameId);
+    });
+
+    it('does not resume a game left untouched for more than a day', () => {
+        const game = useGame();
+
+        game.startGame('442');
+        const record = JSON.parse(window.localStorage.getItem('exact-xi-game')!);
+
+        record.savedAt = Date.now() - 25 * 60 * 60 * 1000;
+        window.localStorage.setItem('exact-xi-game', JSON.stringify(record));
+        game.state.value = null;
+
         expect(game.resumeGame('442')).toBe(false);
     });
 });

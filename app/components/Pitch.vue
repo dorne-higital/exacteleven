@@ -13,25 +13,33 @@
     >
         <rect class="pitch__line" height="96" width="96" x="2" y="2" />
         <line class="pitch__line" x1="2" x2="98" y1="50" y2="50" />
-        <circle class="pitch__line" cx="50" cy="50" r="10" />
-        <rect class="pitch__line" height="18" width="50" x="25" y="2" />
-        <rect class="pitch__line" height="7" width="24" x="38" y="2" />
-        <rect class="pitch__line" height="18" width="50" x="25" y="80" />
-        <rect class="pitch__line" height="7" width="24" x="38" y="91" />
-        <circle class="pitch__spot" cx="50" cy="50" r="0.8" />
-        <circle class="pitch__spot" cx="50" cy="14" r="0.8" />
-        <circle class="pitch__spot" cx="50" cy="86" r="0.8" />
+        <!--
+            The board is 2:3 and the viewBox is stretched to fit it
+            (preserveAspectRatio="none"), so one y-unit is 1.5x one x-unit on
+            screen — rx 12 / ry 8 is what actually draws as a circle.
+        -->
+        <ellipse class="pitch__line" cx="50" cy="50" rx="12" ry="8" />
+        <rect class="pitch__line" height="16" width="50" x="25" y="2" />
+        <rect class="pitch__line" height="6" width="24" x="38" y="2" />
+        <rect class="pitch__line" height="16" width="50" x="25" y="82" />
+        <rect class="pitch__line" height="6" width="24" x="38" y="92" />
+        <ellipse class="pitch__spot" cx="50" cy="50" rx="0.9" ry="0.6" />
     </svg>
 </template>
 
 <style lang="scss" scoped>
-// The pitch is always dark green turf, independent of the page's paper
-// background — its own colors are dedicated tokens (--color-pitch/-line),
-// not derived from --color-foreground, which means "ink" and would produce
-// near-invisible dark lines on green instead of the white pitch markings.
+// "Bib & Board": a flat tactics board — mown stripes in two close greens
+// and thin white lines, no turf texture or vignette. The pitch has its own
+// tokens (--color-pitch/-stripe/-line) because it is always green whatever
+// the page theme; --color-foreground means "ink" and would draw dark lines.
 .pitch {
     background-color: var(--color-pitch);
-    border-radius: var(--radius-sharp);
+    background-image: repeating-linear-gradient(
+        180deg,
+        var(--color-pitch) 0 10%,
+        var(--color-pitch-stripe) 10% 20%
+    );
+    border-radius: var(--radius-card);
     display: block;
     height: 100%;
     left: 0;
@@ -40,10 +48,13 @@
     width: 100%;
 }
 
+// non-scaling-stroke keeps every line a crisp 1.5px however the stretched
+// viewBox is scaled, instead of thick verticals and thin horizontals.
 .pitch__line {
     fill: none;
     stroke: var(--color-pitch-line);
-    stroke-width: 0.4;
+    stroke-width: 1.5px;
+    vector-effect: non-scaling-stroke;
 }
 
 .pitch__spot {

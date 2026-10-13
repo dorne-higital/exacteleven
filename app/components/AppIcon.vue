@@ -2,9 +2,10 @@
 // The handful of small decorative icons reused verbatim across the header
 // controls on multiple pages — kept as one component with a `name` prop
 // rather than three near-identical copies of the same markup drifting apart
-// over time.
+// over time. Line icons at a 2px stroke, drawn in currentColor so they take
+// whatever token their parent sets.
 defineProps<{
-    name: 'back' | 'calendar' | 'close' | 'flame' | 'info' | 'pitch' | 'stats' | 'target';
+    name: 'back' | 'calendar' | 'chevron' | 'close' | 'flame' | 'forward' | 'info' | 'pitch' | 'stats' | 'target';
 }>();
 </script>
 
@@ -17,6 +18,20 @@ defineProps<{
             stroke-linejoin="round"
             stroke-width="2"
         />
+    </svg>
+
+    <svg v-else-if="name === 'forward'" aria-hidden="true" fill="none" height="18" viewBox="0 0 24 24" width="18">
+        <path
+            d="M5 12h14m0 0-7-7m7 7-7 7"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+        />
+    </svg>
+
+    <svg v-else-if="name === 'chevron'" aria-hidden="true" fill="none" height="18" viewBox="0 0 24 24" width="18">
+        <path d="m9 6 6 6-6 6" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" />
     </svg>
 
     <svg v-else-if="name === 'close'" aria-hidden="true" fill="none" height="16" viewBox="0 0 24 24" width="16">

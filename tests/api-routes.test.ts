@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { signPlayerToken } from '../server/utils/draw-token';
 import { getPlayerById } from '../server/utils/players';
 import type { DrawnPlayer, HintResult, RevealResult } from '../shared/types';
@@ -25,6 +25,7 @@ vi.stubGlobal('readBody', async (event: { body: unknown }) => event.body);
 const draw = (await import('../server/api/draw.get')).default;
 const reveal = (await import('../server/api/reveal.post')).default;
 const hint = (await import('../server/api/hint.post')).default;
+const refreshTokens = (await import('../server/api/refresh-tokens.post')).default;
 
 function fakeQueryEvent(query: Record<string, unknown>) {
     return { query };
@@ -157,5 +158,60 @@ describe('POST /api/hint', () => {
             objectiveValue: 400,
             total: 0,
         }))).rejects.toMatchObject({ statusCode: 400 });
+    });
+});
+
+describe('POST /api/refresh-tokens', () => {
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    it('re-signs expired tokens for the same players, which then reveal normally', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+
+        const candidates = await draw(fakeQueryEvent({ position: 'MID', gameId: GAME_ID })) as DrawnPlayer[];
+
+        // Past the 5-minute reveal TTL, well inside the 24-hour refresh window.
+        vi.setSystemTime(Date.now() + 60 * 60 * 1000);
+
+        await expect(reveal(fakeBodyEvent({ token: candidates[0]!.token, gameId: GAME_ID })))
+            .rejects.toMatchObject({ statusCode: 410 });
+
+        const refreshed = await refreshTokens(fakeBodyEvent({ gameId: GAME_ID, tokens: candidates.map((candidate) => candidate.token) })) as Array<{ id: string; token: string }>;
+
+        expect(refreshed.map((entry) => entry.id)).toEqual(candidates.map((candidate) => candidate.id));
+        expect(refreshed[0]).not.toHaveProperty('goals');
+
+        const realPlayer = getPlayerById(candidates[0]!.id)!;
+        const result = await reveal(fakeBodyEvent({ token: refreshed[0]!.token, gameId: GAME_ID })) as RevealResult;
+
+        expect(result).toEqual({ goals: realPlayer.goals, assists: realPlayer.assists });
+    });
+
+    it('rejects tokens older than the refresh window with 410', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+
+        const candidates = await draw(fakeQueryEvent({ position: 'MID', gameId: GAME_ID })) as DrawnPlayer[];
+
+        vi.setSystemTime(Date.now() + 25 * 60 * 60 * 1000);
+
+        await expect(refreshTokens(fakeBodyEvent({ gameId: GAME_ID, tokens: [candidates[0]!.token] })))
+            .rejects.toMatchObject({ statusCode: 410 });
+    });
+
+    it('rejects a token from another game with 403, and a forged one too', async () => {
+        const candidates = await draw(fakeQueryEvent({ position: 'MID', gameId: GAME_ID })) as DrawnPlayer[];
+        const forged = await signPlayerToken(candidates[0]!.id, GAME_ID, 'not-the-real-secret');
+
+        await expect(refreshTokens(fakeBodyEvent({ gameId: 'a-different-game', tokens: [candidates[0]!.token] })))
+            .rejects.toMatchObject({ statusCode: 403 });
+        await expect(refreshTokens(fakeBodyEvent({ gameId: GAME_ID, tokens: [forged] })))
+            .rejects.toMatchObject({ statusCode: 403 });
+    });
+
+    it('rejects a missing gameId or a bad token list with 400', async () => {
+        await expect(refreshTokens(fakeBodyEvent({ tokens: ['x'] }))).rejects.toMatchObject({ statusCode: 400 });
+        await expect(refreshTokens(fakeBodyEvent({ gameId: GAME_ID, tokens: [] }))).rejects.toMatchObject({ statusCode: 400 });
+        await expect(refreshTokens(fakeBodyEvent({ gameId: GAME_ID, tokens: ['a', 'b', 'c', 'd'] }))).rejects.toMatchObject({ statusCode: 400 });
     });
 });

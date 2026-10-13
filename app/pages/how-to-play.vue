@@ -8,7 +8,7 @@ usePageSeoMeta({
 <template>
     <main class="how-to-play">
         <AppHeader>
-            <NuxtLink class="how-to-play__back" to="/">
+            <NuxtLink class="app-header-back how-to-play__back" to="/">
                 <AppIcon name="back" />
                 Home
             </NuxtLink>
@@ -17,48 +17,56 @@ usePageSeoMeta({
         <div class="how-to-play__inner">
             <h1>How to play</h1>
 
-            <HowToPlayContent />
+            <div class="how-to-play__card">
+                <HowToPlayContent />
+            </div>
         </div>
     </main>
 </template>
 
 <style lang="scss" scoped>
-// AppHeader is a direct child here (not nested inside .how-to-play__inner)
-// so it's sized by its own max-width, not this page's — see AppHeader.vue
-// for why that matters.
+// Bib & Board reading page: the rules sit on one surface card so the page
+// matches the InfoDialog version of the same content. AppHeader is a direct
+// child here (not nested inside .how-to-play__inner) so it's sized by its
+// own max-width, not this page's — see AppHeader.vue for why that matters.
 .how-to-play {
-    align-items: center;
+    box-sizing: border-box;
     display: flex;
+    flex: 1 0 auto;
     flex-direction: column;
     gap: 1.25rem;
-    min-height: 100vh;
-    padding: 1.5rem 1.25rem;
+    padding: 1rem 1rem 5.5rem;
 }
 
 .how-to-play__inner {
     display: flex;
     flex-direction: column;
-    gap: 1.25rem;
-    max-width: 34rem;
+    gap: 1rem;
+    margin: 0 auto;
+    max-width: 36rem;
     width: 100%;
 }
 
+// The back pill's look comes from AppHeader (.app-header-back).
 .how-to-play__back {
-    align-items: center;
-    color: inherit;
-    display: flex;
-    font-size: 0.85rem;
-    font-weight: 600;
-    gap: 0.4rem;
-    text-decoration: none;
-}
-
-.how-to-play__back:hover,
-.how-to-play__back:focus-visible {
-    color: var(--color-primary);
+    margin-right: auto;
 }
 
 h1 {
     margin: 0;
+}
+
+.how-to-play__card {
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-sm);
+    padding: 1.25rem;
+}
+
+@media (width >= 30rem) {
+    .how-to-play__card {
+        padding: 1.5rem;
+    }
 }
 </style>

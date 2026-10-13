@@ -102,6 +102,13 @@ export interface HintResult {
     ruledOutId: string;
 }
 
+// /api/refresh-tokens' response — a fresh token per already-offered player,
+// matched back to the candidate by id. Never any goals/assists.
+export interface RefreshedToken {
+    id: string;
+    token: string;
+}
+
 export interface GameState {
     /** Random per-playthrough id, minted client-side at startGame() and bound into every draw token's signature so a token can't be replayed outside the game it was issued for. */
     gameId: string;
@@ -120,6 +127,16 @@ export interface GameState {
     activeSlotId: string | null;
     /** The 3 (or fewer) candidates currently offered for `activeSlotId`. */
     offeredPlayers: DrawnPlayer[];
+    /**
+     * Every still-open slot's last draw, keyed by slot id — so closing the
+     * choice sheet and tapping the slot again shows the SAME candidates
+     * instead of a free fresh draw (only the reroll changes them). Cleared
+     * for a slot once it's filled. Optional: games persisted before this
+     * field existed simply don't have it yet.
+     */
+    offeredBySlot?: Record<string, DrawnPlayer[]>;
+    /** The hint's ruled-out candidate id per slot, kept with offeredBySlot so reopening a slot still shows it. Optional for the same reason. */
+    ruledOutBySlot?: Record<string, string>;
     /** Guards against double-recording this game's outcome into localStorage stats if the component re-renders after the game ends. */
     statsRecorded: boolean;
     /** Set only for a Daily Challenge game — its rotating win condition. Absent on a classic game, which always uses the plain "hit `target` exactly" rule. */

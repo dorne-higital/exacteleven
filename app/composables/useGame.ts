@@ -1,8 +1,11 @@
 import { HINT_MIN_OPEN_SLOTS } from '#shared/hint';
-import type { DrawnPlayer, FormationCode, GameSlot, GameState, HintResult, Objective, Player, RevealResult, WinOdds } from '../../shared/types';
+import type { DrawnPlayer, FormationCode, GameSlot, GameState, HintResult, Objective, Player, RefreshedToken, RevealResult, WinOdds } from '../../shared/types';
 import { trackEvent } from '../utils/analytics';
+import { apiErrorMessage, apiErrorStatus, apiFetch, classifyApiError } from '../utils/api';
 import { getObjectiveResult } from '../utils/daily-scoring';
 import { getFormation } from '../utils/formations';
+import { createGameId } from '../utils/game-id';
+import { haptics } from '../utils/haptics';
 import { calculateTotal, getGameResult } from '../utils/scoring';
 
 // The /api/daily response shape — mirrors server/api/daily.get.ts's return value.
@@ -30,16 +33,70 @@ const HINTS_PER_GAME = 1;
 // closer to when it can meaningfully move a player's decision.
 const MIN_FILLED_FOR_WIN_ODDS = 6;
 const GAME_STORAGE_KEY = 'exact-xi-game';
+// An in-progress game nobody has touched for this long is dropped rather
+// than resumed — stands in for the old "new tab = fresh game" behavior that
+// sessionStorage gave for free.
+const PERSISTED_GAME_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const DRAW_ERROR_FALLBACK = 'Couldn\'t load players for that slot — tap it again to retry.';
 
-// Persisted to sessionStorage (not localStorage — a stale in-progress game
-// shouldn't survive into a brand new tab/session) so a hard refresh mid-game
-// doesn't silently discard every filled slot. Same guarded-try/catch shape
-// as useStats.ts's read/write pair.
+interface PersistedGame {
+    savedAt: number;
+    game: GameState;
+}
+
+// Persisted so a hard refresh (or, in the iOS app, iOS killing the webview
+// in the background — which wipes sessionStorage) doesn't silently discard
+// every filled slot. localStorage, with a savedAt + max age, rather than the
+// sessionStorage it used to live in. Same guarded-try/catch shape as
+// useStats.ts's read/write pair.
 function readPersistedGame(): GameState | null {
     try {
-        const raw = window.sessionStorage.getItem(GAME_STORAGE_KEY);
+        const raw = window.localStorage.getItem(GAME_STORAGE_KEY);
 
-        return raw ? (JSON.parse(raw) as GameState) : null;
+        if (raw === null) {
+            return migrateSessionGame();
+        }
+
+        const parsed = JSON.parse(raw) as Partial<PersistedGame> | null;
+
+        if (!parsed || typeof parsed !== 'object' || !parsed.game) {
+            return null;
+        }
+
+        if (Date.now() - Number(parsed.savedAt ?? 0) > PERSISTED_GAME_MAX_AGE_MS) {
+            window.localStorage.removeItem(GAME_STORAGE_KEY);
+
+            return null;
+        }
+
+        return parsed.game;
+    } catch {
+        return null;
+    }
+}
+
+// One-time move of a game saved by the previous (sessionStorage) version, so
+// a web player mid-game when this ships doesn't lose it. Removed from
+// sessionStorage once copied, so this only ever runs once per game.
+function migrateSessionGame(): GameState | null {
+    try {
+        const legacy = window.sessionStorage.getItem(GAME_STORAGE_KEY);
+
+        if (legacy === null) {
+            return null;
+        }
+
+        window.sessionStorage.removeItem(GAME_STORAGE_KEY);
+
+        const game = JSON.parse(legacy) as GameState | null;
+
+        if (!game || typeof game !== 'object') {
+            return null;
+        }
+
+        writePersistedGame(game);
+
+        return game;
     } catch {
         return null;
     }
@@ -48,8 +105,11 @@ function readPersistedGame(): GameState | null {
 function writePersistedGame(game: GameState | null): void {
     try {
         if (game) {
-            window.sessionStorage.setItem(GAME_STORAGE_KEY, JSON.stringify(game));
+            const record: PersistedGame = { savedAt: Date.now(), game };
+
+            window.localStorage.setItem(GAME_STORAGE_KEY, JSON.stringify(record));
         } else {
+            window.localStorage.removeItem(GAME_STORAGE_KEY);
             window.sessionStorage.removeItem(GAME_STORAGE_KEY);
         }
     } catch {
@@ -69,7 +129,7 @@ function createInitialState(formationCode: FormationCode): GameState {
     }
 
     return {
-        gameId: crypto.randomUUID(),
+        gameId: createGameId(),
         formationCode,
         target: formation.target,
         slots: formation.slots.map((slot) => ({ ...slot, player: null })),
@@ -103,7 +163,7 @@ function createObjectivePrefilledState(
     const prefilledPlayers = prefilled.map((entry) => entry.player);
 
     return {
-        gameId: crypto.randomUUID(),
+        gameId: createGameId(),
         formationCode,
         target: formation.target,
         slots: formation.slots.map((slot) => {
@@ -150,6 +210,10 @@ export function useGame() {
     // Set when a draw request fails outright (network drop, server error) so
     // play.vue can tell the player the tap didn't silently do nothing.
     const drawError = useState<boolean>('exact-xi-draw-error', () => false);
+    // What to tell the player about that failure — offline, a dropped
+    // connection and rate limiting each get their own wording (see
+    // app/utils/api.ts); anything else keeps the original retry message.
+    const drawErrorMessage = useState<string>('exact-xi-draw-error-message', () => DRAW_ERROR_FALLBACK);
     // A flavor stat (see shared/types.ts's WinOdds doc comment), refreshed on
     // every game start/resume and after every completed pick — never on a
     // reroll alone, since that only reshuffles the current slot's 3
@@ -187,7 +251,7 @@ export function useGame() {
         const objective = game.objective ?? { kind: 'exact' as const, value: game.target, label: 'Target' };
 
         try {
-            winOdds.value = await $fetch<WinOdds>('/api/win-odds', {
+            winOdds.value = await apiFetch<WinOdds>('/api/win-odds', {
                 query: {
                     remaining: remaining.join(','),
                     exclude: game.offeredPlayerIds.join(','),
@@ -308,7 +372,7 @@ export function useGame() {
         const objective = game.objective ?? { kind: 'exact' as const, value: game.target, label: 'Target' };
 
         try {
-            const candidates = await $fetch<DrawnPlayer[]>('/api/draw', {
+            const candidates = await apiFetch<DrawnPlayer[]>('/api/draw', {
                 query: {
                     position: slot.group,
                     exclude: game.offeredPlayerIds.join(','),
@@ -322,6 +386,10 @@ export function useGame() {
 
             game.activeSlotId = slotId;
             game.offeredPlayers = candidates;
+            // Remembered per slot (see closeDialog/openSlot), and any hint
+            // shown for the previous candidates no longer applies.
+            game.offeredBySlot = { ...game.offeredBySlot, [slotId]: candidates };
+            clearRuledOut(game, slotId);
 
             const seen = new Set(game.offeredPlayerIds);
 
@@ -331,12 +399,14 @@ export function useGame() {
 
             game.offeredPlayerIds = [...seen];
             writePersistedGame(game);
+            haptics.select();
             trackEvent('slot_draw', { position: slot.group, formation: game.formationCode });
-        } catch {
+        } catch (error) {
             // Previously an unhandled rejection: the tapped slot did nothing
             // visible at all, which reads as an unresponsive app rather than
             // a failed network request.
             drawError.value = true;
+            drawErrorMessage.value = apiErrorMessage(classifyApiError(error), DRAW_ERROR_FALLBACK, 'tap the slot again to retry');
             trackEvent('slot_draw_error', { position: slot.group, formation: game.formationCode });
         } finally {
             isDrawing.value = false;
@@ -357,7 +427,74 @@ export function useGame() {
             return;
         }
 
+        // Closing the sheet keeps this slot's draw (see closeDialog) — so
+        // reopening shows the same candidates rather than drawing new ones,
+        // which used to make close-and-retap an unlimited free reroll.
+        const previous = game.offeredBySlot?.[slotId];
+
+        if (previous && previous.length > 0) {
+            game.activeSlotId = slotId;
+            game.offeredPlayers = previous;
+            drawError.value = false;
+            writePersistedGame(game);
+            trackEvent('slot_reopen', { position: slot.group, formation: game.formationCode });
+
+            return;
+        }
+
         await drawForSlot(slotId);
+    }
+
+    function clearRuledOut(game: GameState, slotId: string): void {
+        if (game.ruledOutBySlot && slotId in game.ruledOutBySlot) {
+            const { [slotId]: _removed, ...rest } = game.ruledOutBySlot;
+
+            game.ruledOutBySlot = rest;
+        }
+    }
+
+    function forgetSlotOffers(game: GameState, slotId: string): void {
+        if (game.offeredBySlot && slotId in game.offeredBySlot) {
+            const { [slotId]: _removed, ...rest } = game.offeredBySlot;
+
+            game.offeredBySlot = rest;
+        }
+
+        clearRuledOut(game, slotId);
+    }
+
+    // Re-signs the open slot's (expired) draw tokens for the SAME players via
+    // /api/refresh-tokens — needed now that a slot's candidates can be
+    // reopened long after the 5-minute token TTL. Updates tokens in place so
+    // the choice sheet doesn't treat it as a new draw. 'stale' means the
+    // server can't (or, mid-deploy, doesn't yet know how to) refresh them;
+    // 'failed' is a plain network/server failure worth retrying as-is.
+    async function refreshOfferTokens(game: GameState): Promise<'ok' | 'stale' | 'failed'> {
+        try {
+            const fresh = await apiFetch<RefreshedToken[]>('/api/refresh-tokens', {
+                method: 'POST',
+                body: { gameId: game.gameId, tokens: game.offeredPlayers.map((candidate) => candidate.token) },
+            });
+            const byId = new Map(fresh.map((entry) => [entry.id, entry.token]));
+
+            for (const candidate of game.offeredPlayers) {
+                candidate.token = byId.get(candidate.id) ?? candidate.token;
+            }
+
+            if (game.activeSlotId) {
+                game.offeredBySlot = { ...game.offeredBySlot, [game.activeSlotId]: game.offeredPlayers };
+            }
+
+            writePersistedGame(game);
+
+            return 'ok';
+        } catch (error) {
+            const status = apiErrorStatus(error);
+
+            // Not 403: a rejected token means tampering, which shouldn't be
+            // rewarded with the free fresh draw 'stale' leads to.
+            return status === 410 || status === 404 ? 'stale' : 'failed';
+        }
     }
 
     // D3: one reroll per game — re-draws the 3 candidates for whichever slot
@@ -413,24 +550,37 @@ export function useGame() {
 
         let result: HintResult;
 
+        const requestHint = () => apiFetch<HintResult>('/api/hint', {
+            method: 'POST',
+            body: {
+                gameId: game.gameId,
+                tokens: game.offeredPlayers.map((candidate) => candidate.token),
+                remaining: remaining.join(','),
+                exclude: game.offeredPlayerIds.join(','),
+                objectiveKind: objective.kind,
+                objectiveValue: objective.value,
+                total: game.total,
+            },
+        });
+
         try {
-            result = await $fetch<HintResult>('/api/hint', {
-                method: 'POST',
-                body: {
-                    gameId: game.gameId,
-                    tokens: game.offeredPlayers.map((candidate) => candidate.token),
-                    remaining: remaining.join(','),
-                    exclude: game.offeredPlayerIds.join(','),
-                    objectiveKind: objective.kind,
-                    objectiveValue: objective.value,
-                    total: game.total,
-                },
-            });
-        } catch {
-            return null;
+            result = await requestHint();
+        } catch (error) {
+            // A reopened slot's tokens may have expired — refresh them once
+            // and retry, rather than burning nothing but still failing.
+            if (apiErrorStatus(error) !== 410 || await refreshOfferTokens(game) !== 'ok') {
+                return null;
+            }
+
+            try {
+                result = await requestHint();
+            } catch {
+                return null;
+            }
         }
 
         game.hintsLeft -= 1;
+        game.ruledOutBySlot = { ...game.ruledOutBySlot, [game.activeSlotId]: result.ruledOutId };
         trackEvent('hint_used', { formation: game.formationCode, slots_left: remaining.length + 1 });
         writePersistedGame(game);
 
@@ -459,22 +609,50 @@ export function useGame() {
         // indication anything had gone wrong.
         let result: RevealResult;
 
-        try {
-            result = await $fetch<RevealResult>('/api/reveal', {
+        const requestReveal = () => {
+            // Looked up fresh each time: refreshOfferTokens() may have just
+            // replaced this candidate's token.
+            const token = game.offeredPlayers.find((candidate) => candidate.id === chosen.id)?.token ?? chosen.token;
+
+            return apiFetch<RevealResult>('/api/reveal', {
                 method: 'POST',
-                body: { token: chosen.token, gameId: game.gameId },
+                body: { token, gameId: game.gameId },
             });
+        };
+
+        try {
+            result = await requestReveal();
         } catch (error) {
             // 410 means the anti-peek token itself expired — a player who sat
-            // on this pick past its 5-minute TTL, not tampering. Distinct
-            // from every other failure (network drop, a genuinely rejected
-            // token, a server error) so the dialog can show a neutral
-            // "that timed out" message instead of the generic retry one.
-            if ((error as { statusCode?: number } | null)?.statusCode === 410) {
+            // on this pick past its 5-minute TTL (or reopened a slot drawn
+            // earlier), not tampering. The same candidates get re-signed and
+            // the reveal retried once, invisibly.
+            if (apiErrorStatus(error) !== 410) {
+                return null;
+            }
+
+            const refreshed = await refreshOfferTokens(game);
+
+            if (refreshed === 'failed') {
+                return null;
+            }
+
+            if (refreshed === 'stale') {
+                // Too old to re-sign (or a server that predates refreshing):
+                // a fresh draw for this slot, without spending the reroll —
+                // the dialog then shows its neutral "timed out, tap a player
+                // again" message over the new candidates.
+                forgetSlotOffers(game, slot.id);
+                await drawForSlot(slot.id);
+
                 return 'timeout';
             }
 
-            return null;
+            try {
+                result = await requestReveal();
+            } catch (retryError) {
+                return apiErrorStatus(retryError) === 410 ? 'timeout' : null;
+            }
         }
 
         const player: Player = {
@@ -490,6 +668,7 @@ export function useGame() {
         };
 
         slot.player = player;
+        forgetSlotOffers(game, slot.id);
         trackEvent('player_picked', { position: slot.group, playerId: player.id, formation: game.formationCode });
 
         // Deliberately NOT clearing activeSlotId/offeredPlayers here: the
@@ -507,6 +686,15 @@ export function useGame() {
 
         game.status = outcome.status;
         game.tier = outcome.tier;
+
+        // No-ops on the website (see app/utils/haptics.ts).
+        if (outcome.status === 'won') {
+            haptics.success();
+        } else if (outcome.status === 'bust' || outcome.status === 'lost') {
+            haptics.error();
+        } else {
+            haptics.tap();
+        }
 
         // Record exactly once per game, the moment it reaches a terminal
         // state — guarded so a re-render (e.g. re-opening this same
@@ -558,6 +746,14 @@ export function useGame() {
             return;
         }
 
+        // Keep the slot's candidates for next time (see openSlot) — unless
+        // it was just filled, in which case pickPlayer already forgot them.
+        const slot = findSlot(game, game.activeSlotId);
+
+        if (slot && !slot.player && game.offeredPlayers.length > 0) {
+            game.offeredBySlot = { ...game.offeredBySlot, [slot.id]: game.offeredPlayers };
+        }
+
         game.activeSlotId = null;
         game.offeredPlayers = [];
         writePersistedGame(game);
@@ -573,6 +769,7 @@ export function useGame() {
         isDrawing,
         pendingSlotId,
         drawError,
+        drawErrorMessage,
         winOdds,
         refreshWinOdds,
         startGame,

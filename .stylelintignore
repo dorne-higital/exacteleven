@@ -1,0 +1,7 @@
+# Build output (generated CSS, not source)
+.output/
+.nuxt/
+.netlify/
+dist/
+ios/
+node_modules/

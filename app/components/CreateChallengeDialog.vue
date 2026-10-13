@@ -3,6 +3,7 @@ import type { ChallengePayload } from '../composables/useGame';
 import type { FormationCode, ObjectiveKind } from '../../shared/types';
 import { objectiveValueOptions } from '#shared/daily';
 import { trackEvent } from '../utils/analytics';
+import { apiFetch } from '../utils/api';
 import { buildChallengeQuery } from '../utils/challenge-config';
 import { formations, getSlotShortLabel } from '../utils/formations';
 
@@ -71,7 +72,7 @@ async function handleGenerate(): Promise<void> {
     });
 
     try {
-        preview.value = await $fetch<ChallengePayload>('/api/challenge', { query });
+        preview.value = await apiFetch<ChallengePayload>('/api/challenge', { query });
         challengeUrl.value = `${siteConfig.url}/challenge?${new URLSearchParams(query).toString()}`;
         step.value = 'preview';
         trackEvent('challenge_created', {
@@ -159,11 +160,12 @@ watch(open, (isOpen) => {
 
             <div class="create-challenge__field">
                 <span class="create-challenge__label">Formation</span>
-                <div class="create-challenge__chips">
+                <div aria-label="Formation" class="create-challenge__chips create-challenge__chips--mono" role="group">
                     <button
                         v-for="candidate in formations"
                         :key="candidate.code"
                         class="create-challenge__chip"
+                        :aria-pressed="candidate.code === formationCode"
                         :class="{ 'create-challenge__chip--active': candidate.code === formationCode }"
                         type="button"
                         @click="formationCode = candidate.code"
@@ -175,11 +177,12 @@ watch(open, (isOpen) => {
 
             <div class="create-challenge__field">
                 <span class="create-challenge__label">Objective</span>
-                <div class="create-challenge__chips">
+                <div aria-label="Objective" class="create-challenge__chips" role="group">
                     <button
                         v-for="option in MODE_OPTIONS"
                         :key="option.kind"
                         class="create-challenge__chip"
+                        :aria-pressed="option.kind === mode"
                         :class="{ 'create-challenge__chip--active': option.kind === mode }"
                         type="button"
                         @click="mode = option.kind"
@@ -191,11 +194,12 @@ watch(open, (isOpen) => {
 
             <div v-if="valueOptions.length > 0" class="create-challenge__field">
                 <span class="create-challenge__label">Value</span>
-                <div class="create-challenge__chips">
+                <div aria-label="Value" class="create-challenge__chips create-challenge__chips--mono" role="group">
                     <button
                         v-for="option in valueOptions"
                         :key="option"
                         class="create-challenge__chip"
+                        :aria-pressed="option === value"
                         :class="{ 'create-challenge__chip--active': option === value }"
                         type="button"
                         @click="value = option"
@@ -207,11 +211,12 @@ watch(open, (isOpen) => {
 
             <div class="create-challenge__field">
                 <span class="create-challenge__label">Pre-fill slots (up to {{ MAX_PRESET_SLOTS }}, optional)</span>
-                <div class="create-challenge__chips">
+                <div aria-label="Pre-fill slots" class="create-challenge__chips" role="group">
                     <button
                         v-for="slot in nonGkSlots"
                         :key="slot.id"
                         class="create-challenge__chip"
+                        :aria-pressed="presetSlotIds.includes(slot.id)"
                         :class="{ 'create-challenge__chip--active': presetSlotIds.includes(slot.id) }"
                         :disabled="!presetSlotIds.includes(slot.id) && presetSlotIds.length >= MAX_PRESET_SLOTS"
                         type="button"
@@ -228,13 +233,15 @@ watch(open, (isOpen) => {
         </template>
 
         <template v-else-if="step === 'preview' && preview">
-            <p class="create-challenge__intro">
-                {{ preview.formationCode }} · {{ preview.objective.label }}
+            <p class="create-challenge__summary">
+                <span class="create-challenge__summary-formation">{{ preview.formationCode }}</span>
+                <span>{{ preview.objective.label }}</span>
             </p>
 
             <ul v-if="preview.prefilled.length > 0" class="create-challenge__preview-list">
                 <li v-for="entry in preview.prefilled" :key="entry.slotId" class="create-challenge__preview-item">
-                    {{ entry.player.name }} — {{ entry.player.goals + entry.player.assists }}
+                    <span class="create-challenge__preview-name">{{ entry.player.name }}</span>
+                    <span class="create-challenge__preview-value">{{ entry.player.goals + entry.player.assists }}</span>
                 </li>
             </ul>
             <p v-else class="create-challenge__preview-empty">No pre-filled slots — a clean board with a twist.</p>
@@ -248,31 +255,34 @@ watch(open, (isOpen) => {
         </template>
 
         <template v-else-if="step === 'error'">
-            <p class="create-challenge__intro">Couldn't build that challenge — try a different combination.</p>
+            <p class="create-challenge__error" role="alert">Couldn't build that challenge — try a different combination.</p>
             <button class="create-challenge__generate" type="button" @click="handleStartOver">Start over</button>
         </template>
     </CenteredDialog>
 </template>
 
 <style lang="scss" scoped>
+// Bib & Board: 44px chips with the red active state (the same "on" chip as
+// the home board's formation picker), one red CTA per step, and a quiet
+// outlined secondary button.
 .create-challenge__intro {
-    color: color-mix(in srgb, var(--color-foreground) 75%, transparent);
-    font-size: 0.85rem;
-    line-height: 1.4;
-    margin: 0 0 1rem;
+    color: var(--color-muted);
+    font-size: 0.875rem;
+    line-height: 1.45;
+    margin: 0 0 1.1rem;
 }
 
 .create-challenge__field {
-    margin-bottom: 1rem;
+    margin-bottom: 1.1rem;
 }
 
 .create-challenge__label {
-    color: color-mix(in srgb, var(--color-foreground) 70%, transparent);
+    color: var(--color-muted);
     display: block;
     font-size: 0.7rem;
     font-weight: 700;
-    letter-spacing: 0.06em;
-    margin-bottom: 0.4rem;
+    letter-spacing: 0.1em;
+    margin-bottom: 0.45rem;
     text-transform: uppercase;
 }
 
@@ -283,15 +293,29 @@ watch(open, (isOpen) => {
 }
 
 .create-challenge__chip {
-    background: none;
-    border: 1px solid color-mix(in srgb, var(--color-foreground) 20%, transparent);
-    border-radius: var(--radius-sharp);
-    color: inherit;
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-md);
+    box-sizing: border-box;
+    color: var(--color-foreground);
     cursor: pointer;
     font: inherit;
-    font-size: 0.78rem;
+    font-size: 0.85rem;
     font-weight: 600;
-    padding: 0.4rem 0.75rem;
+    min-height: var(--tap-min);
+    min-width: var(--tap-min);
+    padding: 0 0.85rem;
+    transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+// Formation codes and objective values are numbers: the mono face.
+.create-challenge__chips--mono .create-challenge__chip {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+}
+
+.create-challenge__chip:hover:not(:disabled, .create-challenge__chip--active) {
+    border-color: var(--color-primary);
 }
 
 .create-challenge__chip:disabled {
@@ -300,24 +324,32 @@ watch(open, (isOpen) => {
 }
 
 .create-challenge__chip--active {
-    background-color: var(--color-primary);
-    border-color: var(--color-primary);
-    color: var(--color-background);
+    background-color: var(--color-bib);
+    border-color: var(--color-bib);
+    color: var(--color-on-bib);
 }
 
-// The ticket-stub CTA — this class carries whichever action is primary
-// for the current step (generate, then share/copy).
+// The red CTA — this class carries whichever action is primary for the
+// current step (generate, then share/copy).
 .create-challenge__generate {
-    background-color: var(--color-primary);
+    background-color: var(--color-bib);
     border: none;
     border-radius: var(--radius-stub);
-    color: var(--color-background);
+    box-sizing: border-box;
+    color: var(--color-on-bib);
     cursor: pointer;
     flex: 1 1 auto;
     font: inherit;
-    font-weight: 700;
+    font-size: 1rem;
+    font-weight: 800;
+    margin-top: 0.25rem;
+    min-height: 3rem;
     padding: 0.7rem 1rem;
     width: 100%;
+}
+
+.create-challenge__generate:hover:not(:disabled) {
+    background-color: color-mix(in srgb, var(--color-bib) 88%, var(--color-foreground));
 }
 
 .create-challenge__generate:disabled {
@@ -325,30 +357,75 @@ watch(open, (isOpen) => {
     opacity: 0.6;
 }
 
-.create-challenge__preview-list {
+// Preview: the board in brief — formation in the display face, then the
+// objective, then the locked players as hairline rows with mono totals.
+.create-challenge__summary {
+    align-items: baseline;
     display: flex;
-    flex-direction: column;
-    font-size: 0.85rem;
-    gap: 0.3rem;
+    flex-wrap: wrap;
+    font-weight: 700;
+    gap: 0.6rem;
+    margin: 0 0 1rem;
+}
+
+.create-challenge__summary-formation {
+    font-family: var(--font-display);
+    font-size: 2rem;
+    font-weight: 900;
+    line-height: 1;
+}
+
+.create-challenge__preview-list {
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-card);
+    font-size: 0.875rem;
     list-style: none;
     margin: 0 0 1rem;
+    overflow: hidden;
     padding: 0;
 }
 
+.create-challenge__preview-item {
+    align-items: center;
+    display: flex;
+    gap: 0.75rem;
+    justify-content: space-between;
+    min-height: var(--tap-min);
+    padding: 0 0.9rem;
+}
+
+.create-challenge__preview-item + .create-challenge__preview-item {
+    border-top: 1px solid var(--color-line);
+}
+
+.create-challenge__preview-name {
+    font-weight: 600;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.create-challenge__preview-value {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+}
+
 .create-challenge__preview-empty {
-    color: color-mix(in srgb, var(--color-foreground) 70%, transparent);
-    font-size: 0.85rem;
+    color: var(--color-muted);
+    font-size: 0.875rem;
     margin: 0 0 1rem;
 }
 
 .create-challenge__link {
-    background-color: color-mix(in srgb, var(--color-foreground) 6%, transparent);
-    border-radius: var(--radius-sharp);
+    background-color: var(--color-surface-2);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-md);
     display: block;
-    font-size: 0.75rem;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
     margin-bottom: 1rem;
-    overflow-wrap: break-word;
-    padding: 0.6rem 0.75rem;
+    overflow-wrap: anywhere;
+    padding: 0.65rem 0.8rem;
 }
 
 .create-challenge__preview-actions {
@@ -357,14 +434,37 @@ watch(open, (isOpen) => {
     gap: 0.5rem;
 }
 
+.create-challenge__preview-actions .create-challenge__generate {
+    margin-top: 0;
+}
+
 .create-challenge__start-over {
-    background: none;
-    border: 1px solid color-mix(in srgb, var(--color-foreground) 20%, transparent);
-    border-radius: var(--radius-sharp);
-    color: inherit;
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-stub);
+    box-sizing: border-box;
+    color: var(--color-foreground);
     cursor: pointer;
     flex: 1 1 auto;
     font: inherit;
+    font-weight: 700;
+    min-height: 3rem;
     padding: 0.7rem 1rem;
+}
+
+.create-challenge__start-over:hover {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+}
+
+// Errors are amber, never red (red means winning in this app).
+.create-challenge__error {
+    background-color: color-mix(in srgb, var(--color-amber) 12%, transparent);
+    border-left: 3px solid var(--color-amber);
+    border-radius: var(--radius-sm);
+    font-size: 0.875rem;
+    line-height: 1.45;
+    margin: 0 0 1rem;
+    padding: 0.7rem 0.85rem;
 }
 </style>

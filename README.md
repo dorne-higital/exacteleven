@@ -19,6 +19,18 @@ Copy `.env.example` to `.env` and set `NUXT_DRAW_TOKEN_SECRET` before deploying 
 
 `NUXT_PUBLIC_SITE_URL` is optional — `nuxt.config.ts`'s `site.url` already defaults to the real production domain, so this is only needed to override it (e.g. for a Netlify deploy-preview URL).
 
+`NUXT_APP_MIN_BUILD` / `NUXT_APP_LATEST_BUILD` (web deploy, optional) feed `/api/app-config` for the iOS app's update prompt — raise `NUXT_APP_MIN_BUILD` to force older app builds to update. Both default to `0` (no minimum).
+
+`NUXT_PUBLIC_API_BASE` (app build only, optional) points the iOS bundle's API calls somewhere other than `https://exacteleven.co.uk` — e.g. a Netlify deploy-preview URL, or empty to use the local server under `yarn dev:app`.
+
+## Web and iOS app from one codebase
+
+The website and the iOS app (Capacitor, same pattern as Footballdle) run the same code. `APP_TARGET=ios` at build time switches on the app build (`runtimeConfig.public.isApp`): `ssr: false`, `nuxt generate` into `.output/public`, no nuxt-security, no GTM/sitemap/robots/schema.org. Read the flag through `app/utils/platform.ts` (`isAppBuild()` for build-time differences, `isNativeApp()` before any native plugin call).
+
+The app has no server of its own, so it calls the live site's API at `https://exacteleven.co.uk/api` cross-origin (CORS for `capacitor://localhost` is set on `/api/**` in `nuxt.config.ts`). **Every client call to `/api` must go through `apiFetch` in `app/utils/api.ts`** — never a bare `$fetch('/api/...')`, which would silently break the app.
+
+**The API is additive-only.** Shipped app builds keep calling the same routes for months, so never remove or rename a route, a request param, or a response field, and never change what a status code means (410 = token expired, 403 = rejected token). New params must be optional with the old behavior as the default. A genuinely breaking change ships as a new route (e.g. `/api/v2/draw`) alongside the old one, which is only removed once `NUXT_APP_MIN_BUILD` excludes every build that uses it.
+
 ## Data
 
 `server/assets/players.json` is the player pool the game draws from, built from public Premier League data:

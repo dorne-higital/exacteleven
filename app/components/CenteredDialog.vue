@@ -59,18 +59,22 @@ function handleBackdropClick(event: MouseEvent): void {
 </template>
 
 <style lang="scss" scoped>
+// Bib & Board: a flat surface card with a 1px hairline and an 18px radius;
+// the only real shadow in the system, since it genuinely floats.
 .centered-dialog {
     background-color: var(--color-surface);
-    border: 1px solid color-mix(in srgb, var(--color-foreground) 15%, transparent);
-    border-radius: var(--radius-sharp);
-    box-shadow: 0 16px 40px rgb(0 0 0 / 25%);
-    color: inherit;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    box-sizing: border-box;
+    color: var(--color-foreground);
     margin: auto;
 
     // dvh (with a vh fallback) so mobile browser chrome sliding in and out
-    // doesn't push the bottom of the dialog off-screen.
-    max-height: 85vh;
-    max-height: 85dvh;
+    // doesn't push the bottom of the dialog off-screen. The safe-area insets
+    // keep it clear of the notch / home bar in the iOS app.
+    max-height: calc(85vh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    max-height: calc(85dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
     max-width: 28rem;
     padding: 0;
     transition: opacity 0.2s ease, overlay 0.2s ease allow-discrete, display 0.2s ease allow-discrete;
@@ -97,7 +101,7 @@ function handleBackdropClick(event: MouseEvent): void {
 }
 
 .centered-dialog::backdrop {
-    background-color: color-mix(in srgb, var(--color-primary-strong) 55%, transparent);
+    background-color: color-mix(in srgb, var(--color-primary-strong) 60%, transparent);
     transition: overlay 0.2s ease allow-discrete, display 0.2s ease allow-discrete, opacity 0.2s ease;
 }
 
@@ -119,11 +123,12 @@ function handleBackdropClick(event: MouseEvent): void {
 
 .centered-dialog__header {
     align-items: center;
-    border-bottom: 1px solid color-mix(in srgb, var(--color-foreground) 10%, transparent);
+    border-bottom: 1px solid var(--color-line);
     display: flex;
     flex-shrink: 0;
+    gap: 0.75rem;
     justify-content: space-between;
-    padding: 0.75rem 1rem 0.75rem 1.25rem;
+    padding: 0.75rem 0.75rem 0.75rem 1.25rem;
 }
 
 .centered-dialog__body {
@@ -134,7 +139,7 @@ function handleBackdropClick(event: MouseEvent): void {
 
 @media (width >= 30rem) {
     .centered-dialog__header {
-        padding: 1rem 1.25rem 1rem 1.5rem;
+        padding: 0.875rem 0.875rem 0.875rem 1.5rem;
     }
 
     .centered-dialog__body {
@@ -143,24 +148,29 @@ function handleBackdropClick(event: MouseEvent): void {
 }
 
 .centered-dialog__title {
+    font-size: 1.75rem;
+    font-weight: 900;
     margin: 0;
 }
 
 .centered-dialog__close {
     align-items: center;
-    background-color: color-mix(in srgb, var(--color-foreground) 6%, transparent);
-    border: 1px solid color-mix(in srgb, var(--color-foreground) 15%, transparent);
-    border-radius: var(--radius-sharp);
-    color: inherit;
+    background-color: var(--color-surface-2);
+    border: 1px solid transparent;
+    border-radius: var(--radius-pill);
+    color: var(--color-foreground);
     cursor: pointer;
     display: flex;
-    height: 2.75rem;
+    flex-shrink: 0;
+    height: var(--tap-min);
     justify-content: center;
-    width: 2.75rem;
+    padding: 0;
+    width: var(--tap-min);
 }
 
 .centered-dialog__close:hover,
 .centered-dialog__close:focus-visible {
     border-color: var(--color-primary);
+    color: var(--color-primary);
 }
 </style>

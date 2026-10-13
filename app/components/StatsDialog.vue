@@ -11,7 +11,7 @@ const { stats, resetStats } = useStats();
 
 const activeTab = ref<'stats' | 'achievements'>('stats');
 
-// Same league-table language and color progression as ResultPanel.vue — this
+// Same league-table language and --tier-* colour ladder as ResultPanel.vue — this
 // is meant to read as "your own results table," not a generic stats widget,
 // so it rhymes with what a player already sees at the end of a game.
 const BAR_ROWS: ReadonlyArray<{ outcome: Outcome; label: string; colorClass: string; countKey: keyof typeof stats.value }> = [
@@ -46,7 +46,7 @@ const bestResultLabel = computed(() => {
 
 // Which formations get played, not just how a game ended — a different data
 // dimension from the outcome bars above, so it's colored with the formation
-// picker's own difficulty tiers (index.vue) rather than the tier-ladder
+// picker's own difficulty tags (select-formation.vue) rather than the tier-ladder
 // colors, and sorted by play count so the most-picked formation reads first.
 interface FormationRow { code: FormationCode; count: number; tier: 'easier' | 'balanced' | 'hardest' }
 
@@ -134,9 +134,11 @@ function handleReset(): void {
 
 <template>
     <CenteredDialog v-model:open="open" title="Your stats">
-        <div class="stats-dialog__tabs" role="tablist">
+        <div aria-label="Stats sections" class="stats-dialog__tabs" role="tablist">
             <button
-                aria-selected="true"
+                id="stats-dialog-tab-stats"
+                aria-controls="stats-dialog-panel"
+                :aria-selected="activeTab === 'stats'"
                 class="stats-dialog__tab"
                 :class="{ 'stats-dialog__tab--active': activeTab === 'stats' }"
                 role="tab"
@@ -146,7 +148,9 @@ function handleReset(): void {
                 Stats
             </button>
             <button
-                aria-selected="false"
+                id="stats-dialog-tab-achievements"
+                aria-controls="stats-dialog-panel"
+                :aria-selected="activeTab === 'achievements'"
                 class="stats-dialog__tab"
                 :class="{ 'stats-dialog__tab--active': activeTab === 'achievements' }"
                 role="tab"
@@ -157,7 +161,13 @@ function handleReset(): void {
             </button>
         </div>
 
-        <template v-if="activeTab === 'stats'">
+        <div
+            v-if="activeTab === 'stats'"
+            id="stats-dialog-panel"
+            aria-labelledby="stats-dialog-tab-stats"
+            class="stats-dialog__panel"
+            role="tabpanel"
+        >
             <div class="stats-dialog__hero">
                 <div class="stats-dialog__hero-stat">
                     <span class="stats-dialog__hero-value">{{ stats.gamesPlayed }}</span>
@@ -174,7 +184,8 @@ function handleReset(): void {
             </div>
 
             <p v-if="bestResultLabel" class="stats-dialog__best">
-                <strong>Best:</strong> {{ bestResultLabel }}
+                <span class="stats-dialog__best-label">Best</span>
+                <span class="stats-dialog__best-value">{{ bestResultLabel }}</span>
             </p>
 
             <div class="stats-dialog__bars">
@@ -202,7 +213,9 @@ function handleReset(): void {
             </div>
 
             <div v-if="mostPlayed" class="stats-dialog__formations">
-                <p class="stats-dialog__formations-heading">Most played: {{ mostPlayed }}</p>
+                <p class="stats-dialog__formations-heading">
+                    Most played <span class="stats-dialog__formations-top">{{ mostPlayed }}</span>
+                </p>
                 <div class="stats-dialog__bars">
                     <div v-for="row in formationRows" :key="row.code" class="stats-dialog__bar-row">
                         <span class="stats-dialog__bar-label">{{ row.code }}</span>
@@ -219,9 +232,15 @@ function handleReset(): void {
             </div>
 
             <button class="stats-dialog__reset" type="button" @click="handleReset">Reset stats</button>
-        </template>
+        </div>
 
-        <div v-else class="achievements-tab">
+        <div
+            v-else
+            id="stats-dialog-panel"
+            aria-labelledby="stats-dialog-tab-achievements"
+            class="achievements-tab"
+            role="tabpanel"
+        >
             <p class="achievements-tab__intro">
                 {{ achievementSummary.unlocked }} of {{ achievementSummary.total }} unlocked — badges gray out until you
                 reach them, so you can always see what's next.
@@ -254,7 +273,11 @@ function handleReset(): void {
 
             <details class="achievements-tab__breakdown">
                 <summary class="achievements-tab__breakdown-summary">
-                    By tier &amp; formation ({{ breakdownSummary.unlocked }}/{{ breakdownSummary.total }})
+                    <span>By tier &amp; formation</span>
+                    <span class="achievements-tab__breakdown-count">
+                        {{ breakdownSummary.unlocked }}/{{ breakdownSummary.total }}
+                    </span>
+                    <AppIcon class="achievements-tab__breakdown-chevron" name="chevron" />
                 </summary>
                 <div v-for="section in breakdownSections" :key="section.key" class="achievements-tab__section">
                     <p class="achievements-tab__section-title">
@@ -286,84 +309,132 @@ function handleReset(): void {
 </template>
 
 <style lang="scss" scoped>
+// Bib & Board stats: a segmented tab control, a three-up scoreboard card
+// (display-face numbers split by hairlines), then the results table as
+// thin bars on the --tier-* ladder with mono counts.
 .stats-dialog__tabs {
+    background-color: var(--color-surface-2);
+    border-radius: var(--radius-md);
     display: flex;
-    gap: 0.5rem;
-    margin-bottom: 1rem;
+    gap: 0.25rem;
+    margin-bottom: 1.1rem;
+    padding: 0.25rem;
 }
 
 .stats-dialog__tab {
     background: none;
-    border: 1px solid color-mix(in srgb, var(--color-foreground) 20%, transparent);
-    border-radius: var(--radius-sharp);
-    color: color-mix(in srgb, var(--color-foreground) 70%, transparent);
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    color: var(--color-muted);
     cursor: pointer;
+    flex: 1 1 0;
     font: inherit;
-    font-size: 0.78rem;
+    font-size: 0.85rem;
     font-weight: 700;
-    padding: 0.4rem 0.85rem;
+    min-height: calc(var(--tap-min) - 0.5rem);
+    padding: 0.35rem 0.6rem;
 }
 
+.stats-dialog__tab:hover {
+    color: var(--color-foreground);
+}
+
+// Active state: the raised surface plus a red underline — the "active"
+// use of the bib red.
 .stats-dialog__tab--active {
-    background-color: var(--color-primary);
-    border-color: var(--color-primary);
-    color: var(--color-background);
+    background-color: var(--color-surface);
+    border-color: var(--color-line);
+    box-shadow: inset 0 -2px 0 var(--color-bib), var(--shadow-sm);
+    color: var(--color-foreground);
+}
+
+.stats-dialog__panel {
+    display: flex;
+    flex-direction: column;
 }
 
 .stats-dialog__hero {
-    display: flex;
-    gap: 1.5rem;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-card);
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
     margin-bottom: 0.75rem;
+    overflow: hidden;
 }
 
 .stats-dialog__hero-stat {
     display: flex;
     flex-direction: column;
-    gap: 0.1rem;
+    gap: 0.3rem;
+    min-width: 0;
+    padding: 0.75rem 0.8rem 0.7rem;
+}
+
+.stats-dialog__hero-stat + .stats-dialog__hero-stat {
+    border-left: 1px solid var(--color-line);
 }
 
 .stats-dialog__hero-value {
     font-family: var(--font-display);
-    font-size: 2rem;
+    font-size: 2.25rem;
     font-variant-numeric: tabular-nums;
-    line-height: 1;
+    font-weight: 900;
+    line-height: 0.95;
 }
 
 .stats-dialog__hero-label {
-    color: color-mix(in srgb, var(--color-foreground) 70%, transparent);
-    font-size: 0.7rem;
-    letter-spacing: 0.06em;
+    color: var(--color-muted);
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
     text-transform: uppercase;
 }
 
 .stats-dialog__best {
-    background-color: color-mix(in srgb, var(--color-foreground) 6%, transparent);
-    border-radius: var(--radius-sharp);
-    font-size: 0.85rem;
-    margin: 0 0 1rem;
-    padding: 0.5rem 0.75rem;
+    align-items: baseline;
+    background-color: var(--color-surface-2);
+    border-radius: var(--radius-md);
+    display: flex;
+    flex-wrap: wrap;
+    font-size: 0.875rem;
+    gap: 0.5rem;
+    margin: 0 0 1.25rem;
+    padding: 0.6rem 0.8rem;
+}
+
+.stats-dialog__best-label {
+    color: var(--color-muted);
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+
+.stats-dialog__best-value {
+    font-weight: 700;
 }
 
 .stats-dialog__bars {
     display: flex;
     flex-direction: column;
-    gap: 0.6rem;
+    gap: 0.65rem;
 }
 
 .stats-dialog__bar-row {
     align-items: center;
     display: grid;
     gap: 0.6rem;
-    grid-template-columns: 7.5rem 1fr 1.75rem;
+    grid-template-columns: 7.5rem 1fr 2.25rem;
 }
 
 .stats-dialog__bar-label {
-    font-size: 0.75rem;
+    font-size: 0.8rem;
+    font-weight: 600;
 }
 
 .stats-dialog__bar-track {
-    background-color: color-mix(in srgb, var(--color-foreground) 10%, transparent);
-    border-radius: var(--radius-sharp);
+    background-color: var(--color-surface-2);
+    border-radius: var(--radius-pill);
     height: 0.5rem;
     overflow: hidden;
 }
@@ -373,120 +444,152 @@ function handleReset(): void {
     height: 100%;
 }
 
-// Same progression as ResultPanel.vue's tone colors — built from the same 3
-// tokens (primary/foreground/danger), not arbitrary per-tier hexes.
+// The shared result ladder from app.vue. Champion (an exact hit) is the
+// one red bar — the "exact" win moment.
 .stats-dialog__bar-fill--win {
-    background-color: var(--color-primary);
+    background-color: var(--color-bib);
 }
 
 .stats-dialog__bar-fill--champions-league {
-    background-color: color-mix(in srgb, var(--color-primary) 85%, var(--color-foreground) 15%);
+    background-color: var(--tier-cl);
 }
 
 .stats-dialog__bar-fill--europa-league {
-    background-color: color-mix(in srgb, var(--color-primary) 55%, var(--color-foreground) 45%);
+    background-color: var(--tier-el);
 }
 
 .stats-dialog__bar-fill--mid-table {
-    background-color: color-mix(in srgb, var(--color-foreground) 35%, transparent);
+    background-color: var(--tier-mid);
 }
 
 .stats-dialog__bar-fill--avoided-relegation {
-    background-color: color-mix(in srgb, var(--color-danger) 55%, var(--color-foreground) 45%);
+    background-color: var(--tier-avoided);
 }
 
 .stats-dialog__bar-fill--relegated {
-    background-color: color-mix(in srgb, var(--color-danger) 80%, var(--color-foreground) 20%);
+    background-color: var(--tier-relegated);
 }
 
+// Busts are slate, never red. Hatched so they don't read as the
+// (also slate) mid-table bar.
 .stats-dialog__bar-fill--bust {
-    background-color: var(--color-danger);
+    background: repeating-linear-gradient(
+        -45deg,
+        var(--color-bust) 0 3px,
+        color-mix(in srgb, var(--color-bust) 45%, transparent) 3px 6px
+    );
 }
 
 .stats-dialog__formations {
-    border-top: 1px solid color-mix(in srgb, var(--color-foreground) 12%, transparent);
-    margin-top: 0.25rem;
+    border-top: 1px solid var(--color-line);
+    margin-top: 1.1rem;
     padding-top: 1rem;
 }
 
 .stats-dialog__formations-heading {
-    color: color-mix(in srgb, var(--color-foreground) 70%, transparent);
+    align-items: baseline;
+    color: var(--color-muted);
+    display: flex;
     font-size: 0.7rem;
     font-weight: 700;
-    letter-spacing: 0.06em;
-    margin: 0 0 0.6rem;
+    gap: 0.4rem;
+    letter-spacing: 0.1em;
+    margin: 0 0 0.65rem;
     text-transform: uppercase;
 }
 
-// The formation picker's own difficulty colors (index.vue), not the outcome
-// tier progression above — a different data dimension, deliberately
-// visually distinct rather than blending into the outcome bars.
+.stats-dialog__formations-top {
+    color: var(--color-foreground);
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    letter-spacing: 0;
+}
+
+// The formation picker's own difficulty tags (select-formation.vue): green,
+// slate, amber — a different data dimension from the outcome ladder above.
 .stats-dialog__formation-fill--easier {
     background-color: var(--color-primary);
 }
 
 .stats-dialog__formation-fill--balanced {
-    background-color: color-mix(in srgb, var(--color-foreground) 65%, transparent);
+    background-color: var(--color-slate);
 }
 
 .stats-dialog__formation-fill--hardest {
-    background-color: var(--color-danger);
+    background-color: var(--color-amber);
 }
 
 .stats-dialog__bar-count {
-    font-family: var(--font-display);
-    font-size: 0.85rem;
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
     font-variant-numeric: tabular-nums;
+    font-weight: 700;
     text-align: right;
 }
 
+.stats-dialog__formations .stats-dialog__bar-label {
+    font-family: var(--font-mono);
+}
+
+// Destructive but not celebratory, so amber on hover rather than red.
 .stats-dialog__reset {
+    align-self: flex-start;
     background: none;
-    border: 1px solid color-mix(in srgb, var(--color-foreground) 20%, transparent);
-    border-radius: var(--radius-sharp);
-    color: color-mix(in srgb, var(--color-foreground) 70%, transparent);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-md);
+    color: var(--color-muted);
     cursor: pointer;
     font: inherit;
-    font-size: 0.75rem;
-    margin-top: 1.25rem;
-    padding: 0.4rem 0.8rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    margin-top: 1.5rem;
+    min-height: var(--tap-min);
+    padding: 0 1rem;
 }
 
 .stats-dialog__reset:hover,
 .stats-dialog__reset:focus-visible {
-    border-color: var(--color-danger);
-    color: var(--color-danger);
+    border-color: var(--color-amber);
+    color: var(--color-foreground);
 }
 
 .achievements-tab {
     display: flex;
     flex-direction: column;
-    gap: 1.1rem;
+    gap: 1.25rem;
 }
 
 .achievements-tab__intro {
-    color: color-mix(in srgb, var(--color-foreground) 70%, transparent);
-    font-size: 0.78rem;
-    line-height: 1.4;
+    color: var(--color-muted);
+    font-size: 0.82rem;
+    line-height: 1.45;
     margin: 0;
 }
 
 .achievements-tab__section-title {
     align-items: baseline;
-    color: color-mix(in srgb, var(--color-foreground) 70%, transparent);
+    color: var(--color-foreground);
     display: flex;
-    font-size: 0.7rem;
-    font-weight: 700;
+    font-family: var(--font-display);
+    font-size: 1rem;
+    font-weight: 800;
     gap: 0.5rem;
     justify-content: space-between;
-    letter-spacing: 0.06em;
-    margin: 0 0 0.5rem;
+    letter-spacing: 0.04em;
+    margin: 0 0 0.55rem;
     text-transform: uppercase;
 }
 
 .achievements-tab__section-next {
+    background-color: var(--color-surface-2);
+    border-radius: var(--radius-pill);
     color: var(--color-primary);
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
     font-variant-numeric: tabular-nums;
+    font-weight: 700;
+    letter-spacing: 0;
+    padding: 0.15rem 0.5rem;
 }
 
 .achievements-tab__grid {
@@ -496,8 +599,8 @@ function handleReset(): void {
 }
 
 .achievements-tab__breakdown {
-    border-top: 1px solid color-mix(in srgb, var(--color-foreground) 12%, transparent);
-    padding-top: 1rem;
+    border-top: 1px solid var(--color-line);
+    padding-top: 0.75rem;
 }
 
 .achievements-tab__breakdown[open] .achievements-tab__breakdown-summary {
@@ -505,12 +608,52 @@ function handleReset(): void {
 }
 
 .achievements-tab__breakdown-summary {
-    color: color-mix(in srgb, var(--color-foreground) 70%, transparent);
+    align-items: center;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-md);
+    color: var(--color-foreground);
     cursor: pointer;
-    font-size: 0.7rem;
+    display: flex;
+    font-size: 0.85rem;
     font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
+    gap: 0.5rem;
+    list-style: none;
+    min-height: var(--tap-min);
+    padding: 0 0.85rem;
+}
+
+// Hide the native disclosure triangle — the chevron replaces it.
+.achievements-tab__breakdown-summary::-webkit-details-marker {
+    display: none;
+}
+
+.achievements-tab__breakdown-summary:hover {
+    border-color: var(--color-primary);
+}
+
+.achievements-tab__breakdown-count {
+    color: var(--color-muted);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    font-variant-numeric: tabular-nums;
+    margin-left: auto;
+}
+
+.achievements-tab__breakdown-chevron {
+    color: var(--color-muted);
+    flex-shrink: 0;
+    transform: rotate(90deg);
+    transition: transform 0.15s ease;
+}
+
+.achievements-tab__breakdown[open] .achievements-tab__breakdown-chevron {
+    transform: rotate(-90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .achievements-tab__breakdown-chevron {
+        transition: none;
+    }
 }
 
 .achievements-tab__breakdown-summary:focus-visible {
@@ -519,7 +662,7 @@ function handleReset(): void {
 }
 
 .achievements-tab__breakdown .achievements-tab__section + .achievements-tab__section {
-    margin-top: 1.1rem;
+    margin-top: 1.25rem;
 }
 
 .achievements-tab__badge {

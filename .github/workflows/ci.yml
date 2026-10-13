@@ -24,3 +24,9 @@ jobs:
       - run: yarn typecheck
       - run: yarn test
       - run: yarn build
+      # The iOS app bundle (static, ssr:false). Then prove the player stats in
+      # server/assets/players.json never reach it — the app ships every client
+      # file to the device, so a leak there would expose every answer.
+      - run: yarn build:app
+      - run: ls .output/public/_fonts/*.woff2 > /dev/null
+      - run: "! grep -rqE '\"goals\":[0-9]+,\"assists\":' .output/public"

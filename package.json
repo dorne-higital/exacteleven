@@ -8,7 +8,9 @@
   },
   "scripts": {
     "build": "nuxt build",
+    "build:app": "APP_TARGET=ios nuxt generate",
     "dev": "nuxt dev",
+    "dev:app": "APP_TARGET=ios nuxt dev",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare",
@@ -19,9 +21,20 @@
     "sim:balance": "tsx scripts/simulate.ts",
     "sim:daily": "tsx scripts/simulate-daily.ts",
     "test": "vitest run",
-    "typecheck": "nuxt typecheck && tsc --noEmit -p tsconfig.scripts.json"
+    "typecheck": "nuxt typecheck && tsc --noEmit -p tsconfig.scripts.json",
+    "cap:sync": "yarn build:app && cap sync ios",
+    "cap:open": "cap open ios",
+    "ios:open": "cap open ios"
   },
   "dependencies": {
+    "@capacitor/app": "^8.1.1",
+    "@capacitor/core": "^8.5.2",
+    "@capacitor/haptics": "^8.0.2",
+    "@capacitor/ios": "^8.5.2",
+    "@capacitor/preferences": "^8.0.1",
+    "@capacitor/share": "^8.0.2",
+    "@capacitor/splash-screen": "^8.0.2",
+    "@capacitor/status-bar": "^8.0.3",
     "@netlify/blobs": "^11.1.1",
     "@nuxt/fonts": "0.14.0",
     "nuxt": "^4.5.2",
@@ -30,6 +43,7 @@
     "vue-router": "^5.3.1"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.2",
     "@nuxt/eslint": "^1.17.0",
     "@nuxt/test-utils": "^4.3.2",
     "@nuxtjs/seo": "^5.3.16",

@@ -102,22 +102,28 @@ function handleDismiss(): void {
 </template>
 
 <style lang="scss" scoped>
+// Bib & Board toast: a flat surface card with a hairline and a red left
+// edge (unlocking a badge is a celebratory moment, so it earns the bib
+// red). Sits above the iOS home bar via the safe-area inset.
 .achievement-toast {
     align-items: center;
     background-color: var(--color-surface);
-    border: 1px solid var(--color-primary);
-    border-radius: var(--radius-sharp);
-    bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px));
-    box-shadow: 0 12px 32px rgb(0 0 0 / 35%);
+    border: 1px solid var(--color-line);
+    border-left: 4px solid var(--color-bib);
+    border-radius: var(--radius-card);
+    bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+    box-shadow: var(--shadow-lg);
+    box-sizing: border-box;
+    color: var(--color-foreground);
     display: flex;
     gap: 0.75rem;
     left: 50%;
-    max-width: 22rem;
-    padding: 0.75rem 0.85rem;
+    max-width: 24rem;
+    padding: 0.6rem 0.6rem 0.6rem 0.8rem;
     position: fixed;
     transform: translateX(-50%);
     transition: opacity 0.25s ease, transform 0.25s ease;
-    width: calc(100% - 2.5rem);
+    width: calc(100% - 2rem - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px));
     z-index: 50;
 }
 
@@ -144,17 +150,20 @@ function handleDismiss(): void {
 }
 
 .achievement-toast__eyebrow {
-    color: var(--color-primary);
+    color: var(--color-muted);
     font-size: 0.65rem;
     font-weight: 700;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.1em;
     margin: 0;
     text-transform: uppercase;
 }
 
 .achievement-toast__label {
     font-family: var(--font-display);
-    font-size: 1rem;
+    font-size: 1.2rem;
+    font-weight: 800;
+    letter-spacing: 0.01em;
+    line-height: 1.1;
     margin: 0.1rem 0 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -166,30 +175,45 @@ function handleDismiss(): void {
     align-items: center;
     display: flex;
     flex-shrink: 0;
-    gap: 0.4rem;
+    gap: 0.25rem;
 }
 
-// The ticket-stub CTA — sharing a just-unlocked badge is a real call to
-// action, same reasoning as ResultPanel's primary button.
+// Sharing a just-unlocked badge is this toast's one call to action, so it
+// gets the red CTA treatment.
 .achievement-toast__share {
-    background-color: var(--color-primary);
+    background-color: var(--color-bib);
     border: none;
-    border-radius: var(--radius-stub);
-    color: var(--color-background);
+    border-radius: var(--radius-md);
+    color: var(--color-on-bib);
     cursor: pointer;
     font: inherit;
-    font-size: 0.75rem;
-    font-weight: 700;
-    padding: 0.4rem 0.65rem;
+    font-size: 0.8rem;
+    font-weight: 800;
+    min-height: var(--tap-min);
+    padding: 0 0.9rem;
     white-space: nowrap;
 }
 
+.achievement-toast__share:hover {
+    background-color: color-mix(in srgb, var(--color-bib) 88%, var(--color-foreground));
+}
+
 .achievement-toast__dismiss {
+    align-items: center;
     background: none;
     border: none;
-    color: color-mix(in srgb, var(--color-foreground) 65%, transparent);
+    border-radius: var(--radius-pill);
+    color: var(--color-muted);
     cursor: pointer;
     display: flex;
-    padding: 0.3rem;
+    height: var(--tap-min);
+    justify-content: center;
+    padding: 0;
+    width: var(--tap-min);
+}
+
+.achievement-toast__dismiss:hover {
+    background-color: var(--color-surface-2);
+    color: var(--color-foreground);
 }
 </style>

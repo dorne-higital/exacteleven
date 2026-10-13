@@ -26,7 +26,16 @@ declare global {
     function getQuery(event: unknown): Record<string, unknown>;
     function readBody<T>(event: unknown): Promise<T>;
     function createError(options: { statusCode: number; statusMessage?: string; data?: unknown }): Error;
-    function useRuntimeConfig(): { drawTokenSecret: string };
+    function setResponseHeader(event: unknown, name: string, value: string | number): void;
+    // Covers both sides: the server routes read drawTokenSecret/appMinBuild/
+    // appLatestBuild/appStoreUrl, client code (app/utils/platform.ts) reads `public`.
+    function useRuntimeConfig(): {
+        drawTokenSecret: string;
+        appMinBuild?: number | string;
+        appLatestBuild?: number | string;
+        appStoreUrl?: string;
+        public?: { isApp?: boolean; apiBase?: string };
+    };
 }
 
 export {};

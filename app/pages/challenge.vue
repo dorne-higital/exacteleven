@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { ChallengePayload } from '../composables/useGame';
 import { trackEvent } from '../utils/analytics';
+import { apiErrorMessage, apiFetch, classifyApiError } from '../utils/api';
 import { challengeKeyFromQuery } from '../utils/challenge-config';
 import { getFormation } from '../utils/formations';
 
@@ -28,10 +29,13 @@ const challengeQuery = computed<Record<string, string>>(() => {
 
 const challengeKey = computed(() => challengeKeyFromQuery(challengeQuery.value));
 
-const { state, isDrawing, pendingSlotId, drawError, startChallengeGame, resumeChallengeGame, openSlot } = useGame();
+const { state, isDrawing, pendingSlotId, drawError, drawErrorMessage, startChallengeGame, resumeChallengeGame, openSlot } = useGame();
+
+const LOAD_ERROR_FALLBACK = 'Couldn\'t load this challenge.';
 
 const loading = ref(true);
 const loadError = ref(false);
+const loadErrorMessage = ref(LOAD_ERROR_FALLBACK);
 
 async function loadChallenge(): Promise<void> {
     if (resumeChallengeGame(challengeKey.value)) {
@@ -44,11 +48,12 @@ async function loadChallenge(): Promise<void> {
     loadError.value = false;
 
     try {
-        const payload = await $fetch<ChallengePayload>('/api/challenge', { query: challengeQuery.value });
+        const payload = await apiFetch<ChallengePayload>('/api/challenge', { query: challengeQuery.value });
 
         startChallengeGame(payload, challengeKey.value);
-    } catch {
+    } catch (error) {
         loadError.value = true;
+        loadErrorMessage.value = apiErrorMessage(classifyApiError(error), LOAD_ERROR_FALLBACK, 'try again');
     } finally {
         loading.value = false;
     }
@@ -102,10 +107,10 @@ usePageSeoMeta({
 <template>
     <main class="challenge">
         <AppHeader>
-            <button aria-label="How to play" class="challenge__info-button" type="button" @click="openInfo">
+            <button aria-label="How to play" class="app-header-button" type="button" @click="openInfo">
                 <AppIcon name="info" />
             </button>
-            <button aria-label="Your stats" class="challenge__info-button" type="button" @click="openStats">
+            <button aria-label="Your stats" class="app-header-button" type="button" @click="openStats">
                 <AppIcon name="stats" />
             </button>
         </AppHeader>
@@ -128,7 +133,7 @@ usePageSeoMeta({
                 <ResultPanel v-if="gameOver" />
 
                 <p v-if="drawError" aria-live="polite" class="challenge__draw-error">
-                    Couldn't load players for that slot — tap it again to retry.
+                    {{ drawErrorMessage }}
                 </p>
 
                 <div class="challenge__board">
@@ -138,6 +143,7 @@ usePageSeoMeta({
                         :key="slot.id"
                         :busy="isDrawing || gameOver"
                         :game-over="gameOver"
+                        :active="state.activeSlotId === slot.id"
                         :loading="pendingSlotId === slot.id"
                         :slot-data="slot"
                         @select="handleSlotSelect"
@@ -148,7 +154,7 @@ usePageSeoMeta({
             </template>
 
             <p v-else-if="loadError" class="challenge__error">
-                Couldn't load this challenge.
+                {{ loadErrorMessage }}
                 <button class="challenge__retry" type="button" @click="loadChallenge">Try again</button>
             </p>
 
@@ -168,82 +174,77 @@ usePageSeoMeta({
 <style lang="scss" scoped>
 // Mirrors daily.vue's layout — same mobile-first single column, same
 // AppHeader-as-direct-child pattern.
+// flex: 1 0 auto fills app.vue's safe-area-padded shell instead of a
+// min-height: 100vh, which (added to that padding) would scroll by the
+// notch/home-bar height in the iOS app.
 .challenge {
     align-items: center;
+    box-sizing: border-box;
     display: flex;
+    flex: 1 0 auto;
     flex-direction: column;
-    gap: 1.25rem;
-    min-height: 100vh;
-    padding: 1.5rem 1.25rem;
+    gap: 1rem;
+    padding: 1rem 1rem 2rem;
 }
 
 .challenge__inner {
     align-items: center;
     display: flex;
     flex-direction: column;
-    gap: 1.25rem;
+    gap: 0.75rem;
     max-width: 26rem;
     width: 100%;
 }
 
-.challenge__info-button {
-    align-items: center;
-    background-color: color-mix(in srgb, var(--color-foreground) 6%, transparent);
-    border: 1px solid color-mix(in srgb, var(--color-foreground) 15%, transparent);
-    border-radius: var(--radius-sharp);
-    color: inherit;
-    cursor: pointer;
-    display: flex;
-    height: 2.75rem;
-    justify-content: center;
-    padding: 0;
-    width: 2.75rem;
-}
-
-.challenge__info-button:hover,
-.challenge__info-button:focus-visible {
-    border-color: var(--color-primary);
-}
-
+// The formation as the screen's big display heading, like the handbook's
+// pitch mockup ("4-3-3"), left-aligned over the scoreboard.
 .challenge__title {
-    margin: 0;
+    align-self: stretch;
+    font-size: 2rem;
+    margin: 0.25rem 0 0;
 }
 
 .challenge__objective {
-    color: color-mix(in srgb, var(--color-foreground) 75%, transparent);
+    align-self: stretch;
+    color: var(--color-muted);
     font-weight: 600;
-    margin: -0.75rem 0 0;
-    text-align: center;
+    margin: -0.4rem 0 0;
 }
 
 .challenge__board {
     aspect-ratio: 2 / 3;
+    margin-top: 0.25rem;
     position: relative;
     width: 100%;
 }
 
 .challenge__error {
+    color: var(--color-muted);
     padding-top: 3rem;
     text-align: center;
 }
 
 .challenge__retry {
-    background: none;
-    border: none;
-    color: var(--color-primary);
+    background-color: var(--color-bib);
+    border: 0;
+    border-radius: var(--radius-md);
+    color: var(--color-on-bib);
     cursor: pointer;
     display: block;
     font: inherit;
     font-weight: 700;
-    margin: 0.5rem auto 0;
-    padding: 0;
-    text-decoration: underline;
+    margin: 1rem auto 0;
+    min-height: var(--tap-min);
+    padding: 0 1.25rem;
 }
 
+// Errors are amber, never red (red is celebratory in Bib & Board).
 .challenge__draw-error {
-    background-color: color-mix(in srgb, var(--color-danger) 12%, transparent);
-    border-radius: var(--radius-sharp);
-    color: var(--color-danger);
+    background-color: color-mix(in srgb, var(--color-amber) 12%, var(--color-surface));
+    border: 1px solid color-mix(in srgb, var(--color-amber) 40%, transparent);
+    border-radius: var(--radius-md);
+    box-sizing: border-box;
+    color: var(--color-foreground);
     font-size: 0.85rem;
     font-weight: 600;
     margin: 0;

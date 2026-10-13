@@ -1,0 +1,69 @@
+# Codemagic builds the iOS app on their Macs and uploads it to TestFlight.
+# Setup steps are in APP_STORE_SETUP.md.
+workflows:
+  ios-testflight:
+    name: iOS → TestFlight
+    max_build_duration: 45
+    instance_type: mac_mini_m2
+    integrations:
+      # Must match the key's name in Codemagic exactly
+      # (Settings → Integrations → Developer Portal → Manage keys). It's the
+      # team-wide key shared with Footballdle, spelt "Foodballdle" there.
+      app_store_connect: Foodballdle ASC
+    environment:
+      ios_signing:
+        distribution_type: app_store
+        # Must match capacitor.config.ts. App Store profile "Exact XI App" is
+        # in Codemagic → Settings → Code signing identities.
+        bundle_identifier: uk.co.exacteleven.app
+      vars:
+        XCODE_PROJECT: ios/App/App.xcodeproj
+        XCODE_SCHEME: App
+        # Numeric "Apple ID" from App Store Connect → your app → App Information
+        APP_STORE_APPLE_ID: 6822345356
+        # RevenueCat → Exact XI → API keys → Apple public key (starts appl_).
+        # Public by design, so fine to commit. Left unset = purchases switched off.
+        REVENUECAT_APPLE_KEY: appl_IsOUoDFUGKIIKmDOEFTnCGWXXQf
+        # The app calls the live API; override here to point a build at a
+        # Netlify deploy preview instead
+        NUXT_PUBLIC_API_BASE: https://exacteleven.co.uk
+      # Matches "engines": { "node": ">=22" } in package.json
+      node: 22
+      # Pinned rather than "latest", which can queue for ages on a fresh pool
+      xcode: 26.5
+    # No triggering block: builds are started manually from the Codemagic
+    # dashboard so free build minutes aren't burnt on every push.
+    scripts:
+      - name: Install dependencies
+        # Yarn 4 (packageManager in package.json) comes from corepack;
+        # --frozen-lockfile is Yarn 1 syntax and fails here
+        script: corepack enable && yarn install --immutable
+      - name: Build web app and sync into iOS project
+        # yarn build:app (APP_TARGET=ios nuxt generate) + cap sync ios
+        script: yarn cap:sync
+      - name: Check the app bundle
+        # @nuxt/fonts fails silently (system fonts instead), and player stat
+        # data must never ship in the client bundle; fail the build on either
+        script: |
+          ls .output/public/_fonts/*.woff2 > /dev/null || { echo "No self-hosted fonts in .output/public/_fonts"; exit 1; }
+          if grep -rqE '"goals":[0-9]+,"assists":' .output/public; then echo "Player data leaked into the app bundle"; exit 1; fi
+      - name: Apply code signing profiles
+        script: xcode-project use-profiles
+      - name: Bump build number past the latest TestFlight build
+        script: |
+          LATEST=$(app-store-connect get-latest-testflight-build-number "$APP_STORE_APPLE_ID" || echo 0)
+          NEXT=$((LATEST + 1))
+          echo "Build number: $NEXT"
+          sed -i '' "s/CURRENT_PROJECT_VERSION = [0-9]*;/CURRENT_PROJECT_VERSION = $NEXT;/g" "$XCODE_PROJECT/project.pbxproj"
+      - name: Build signed .ipa
+        script: xcode-project build-ipa --project "$XCODE_PROJECT" --scheme "$XCODE_SCHEME"
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    publishing:
+      app_store_connect:
+        auth: integration
+        # Uploads land in TestFlight for internal testers automatically.
+        # Submitting for external beta review needs Test Information filled
+        # in first, so it stays off until you want outside testers.
+        submit_to_testflight: false

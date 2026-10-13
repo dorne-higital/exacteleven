@@ -4,7 +4,7 @@ import type { ChallengePayload, DailyChallengePayload } from '../composables/use
 import type { ShareCardSpec } from '../utils/share-card';
 import { trackEvent } from '../utils/analytics';
 import { getSlotShortLabel } from '../utils/formations';
-import { getDistance } from '../utils/scoring';
+import { getDistance, TIER_BOUNDARIES } from '../utils/scoring';
 import { buildShareCardBlob, shareOrDownloadBlob } from '../utils/share-card';
 
 // 'lost' only ever comes from a Daily Challenge's binary objective outcome —
@@ -183,14 +183,10 @@ watch(outcome, (value) => {
 
 // A fixed, non-random spread (not Math.random()) — purely cosmetic values
 // like this still don't need real randomness, and staying deterministic
-// costs nothing here. The first two entries are theme tokens; a celebration
-// still needs more than two colors to read as confetti at all, so the rest
-// are fixed hexes picked to sit alongside Terrace Press's muted paper-and-ink
-// palette — a faded mustard and a dusty blue, like aged printed bunting,
-// rather than a bright modern confetti spread (same reasoning as the medal
-// colors in AchievementBadge.vue).
-const CONFETTI_COLORS = ['var(--color-primary)', 'var(--color-danger)', '#c08a2e', '#3d6b7a'];
-const CONFETTI_COUNT = 18;
+// costs nothing here. All theme tokens: bib red leads (the exact hit is the
+// red moment), with pitch green, amber and teal as the bunting around it.
+const CONFETTI_COLORS = ['var(--color-bib)', 'var(--color-primary)', 'var(--color-bib)', 'var(--color-amber)', 'var(--color-teal)'];
+const CONFETTI_COUNT = 22;
 
 interface ConfettiPiece {
     id: number;
@@ -198,6 +194,7 @@ interface ConfettiPiece {
     color: string;
     delay: string;
     rotate: string;
+    drift: string;
 }
 
 const confettiPieces = computed<ConfettiPiece[]>(() => {
@@ -211,6 +208,7 @@ const confettiPieces = computed<ConfettiPiece[]>(() => {
         color: CONFETTI_COLORS[i % CONFETTI_COLORS.length]!,
         delay: `${(i % 6) * 0.08}s`,
         rotate: `${(i * 47) % 360}deg`,
+        drift: `${((i * 29) % 60) - 30}px`,
     }));
 });
 
@@ -306,6 +304,55 @@ const resultStats = computed<ResultStat[]>(() => {
     return stats;
 });
 
+interface LadderRung {
+    key: string;
+    label: string;
+    range: string;
+    tone: string;
+    hit: boolean;
+}
+
+// The handbook's result-screen ladder: every finish the classic game can
+// reach, best to worst, with the one this game landed on highlighted. Built
+// from scoring.ts's TIER_BOUNDARIES so the ranges can never drift from the
+// real scoring. Daily/challenge objectives are binary, and a bust sits off
+// the ladder entirely, so neither shows it.
+const ladder = computed<LadderRung[]>(() => {
+    const game = state.value;
+
+    if (!game || game.objective || (game.status !== 'won' && game.status !== 'finished')) {
+        return [];
+    }
+
+    const rungs: LadderRung[] = [
+        { key: 'exact', label: 'Champion', range: 'exact', tone: 'win', hit: game.status === 'won' },
+    ];
+    let previousMax = 0;
+
+    for (const { tier, maxDistance } of TIER_BOUNDARIES) {
+        rungs.push({
+            key: tier,
+            label: TIER_COPY[tier].label,
+            range: Number.isFinite(maxDistance) ? `within ${maxDistance}` : `${previousMax}+`,
+            tone: TONE_CLASS[tier],
+            hit: game.status === 'finished' && game.tier === tier,
+        });
+        previousMax = maxDistance;
+    }
+
+    return rungs;
+});
+
+const eyebrow = computed(() => {
+    const game = state.value;
+
+    if (game?.dailyDate) {
+        return 'Daily · full time';
+    }
+
+    return game?.objective ? 'Challenge · full time' : `${game?.formationCode ?? ''} · full time`;
+});
+
 const resultEmoji = computed(() => {
     const game = state.value;
 
@@ -393,6 +440,7 @@ const shareImageSpec = computed<ShareCardSpec | null>(() => {
         subheading: outcome.value.detail,
         highlight: { label: 'Total', value: String(displayTotal.value) },
         lines,
+        tone: outcome.value.tone === 'win' ? 'win' : outcome.value.tone === 'bust' ? 'bust' : undefined,
     };
 });
 
@@ -509,27 +557,47 @@ function compactStatCaption(player: { goals: number; assists: number }): string 
                 v-for="piece in confettiPieces"
                 :key="piece.id"
                 class="result-panel__confetti-piece"
-                :style="{ '--piece-color': piece.color, '--piece-left': piece.left, '--piece-rotate': piece.rotate, animationDelay: piece.delay }"
+                :style="{ '--piece-color': piece.color, '--piece-drift': piece.drift, '--piece-left': piece.left, '--piece-rotate': piece.rotate, animationDelay: piece.delay }"
             />
         </div>
 
         <div v-if="outcome.tone === 'bust'" aria-hidden="true" class="result-panel__stamp">Bust</div>
+        <div v-else-if="outcome.tone === 'win'" aria-hidden="true" class="result-panel__stamp result-panel__stamp--win">Exact</div>
 
-        <h2 class="result-panel__headline">{{ outcome.label }}</h2>
-        <p class="result-panel__detail">{{ outcome.detail }}</p>
+        <div class="result-panel__head">
+            <p class="result-panel__eyebrow">{{ eyebrow }}</p>
+            <h2 class="result-panel__headline">{{ outcome.label }}</h2>
+            <p class="result-panel__detail">{{ outcome.detail }}</p>
+        </div>
 
         <dl class="result-panel__stats">
-            <div v-for="stat in resultStats" :key="stat.label" class="result-panel__stat">
+            <div v-for="stat in resultStats" :key="stat.label" class="result-panel__stat" :class="{ 'result-panel__stat--total': stat.label === 'Total' }">
                 <dt>{{ stat.label }}</dt>
                 <dd>{{ stat.value }}</dd>
             </div>
         </dl>
 
+        <ol v-if="ladder.length > 0" aria-label="Finishing places" class="result-panel__ladder">
+            <li
+                v-for="rung in ladder"
+                :key="rung.key"
+                :aria-current="rung.hit ? 'true' : undefined"
+                class="result-panel__rung"
+                :class="[`result-panel__rung--${rung.tone}`, { 'result-panel__rung--hit': rung.hit }]"
+            >
+                <span class="result-panel__rung-label">{{ rung.label }}</span>
+                <span class="result-panel__rung-range">{{ rung.range }}</span>
+            </li>
+        </ol>
+
         <div class="result-panel__actions">
             <button class="result-panel__action result-panel__action--primary" type="button" @click="handlePlayAgain">
                 Play again
             </button>
-            <NuxtLink v-if="!state.objective" class="result-panel__action" to="/">Change formation</NuxtLink>
+            <button class="result-panel__action result-panel__action--secondary" type="button" @click="handleShareImage">
+                {{ shareImageLabel }}
+            </button>
+            <NuxtLink v-if="!state.objective" class="result-panel__action result-panel__action--wide" to="/select-formation">Change formation</NuxtLink>
         </div>
 
         <div class="result-panel__share">
@@ -539,12 +607,8 @@ function compactStatCaption(player: { goals: number; assists: number }): string 
             </button>
         </div>
 
-        <div class="result-panel__share-extra">
-            <button class="result-panel__action" type="button" @click="handleShareImage">{{ shareImageLabel }}</button>
-        </div>
-
         <div v-if="starSlot" class="result-panel__starman">
-            <svg aria-hidden="true" class="result-panel__starman-icon" fill="currentColor" height="28" viewBox="0 0 24 24" width="28">
+            <svg aria-hidden="true" class="result-panel__starman-icon" fill="currentColor" height="24" viewBox="0 0 24 24" width="24">
                 <path d="M12 2l2.9 6.6L22 9.3l-5 4.8 1.3 7L12 17.8 5.7 21l1.3-7-5-4.8 7.1-0.7z" />
             </svg>
             <div class="result-panel__starman-info">
@@ -584,15 +648,21 @@ function compactStatCaption(player: { goals: number; assists: number }): string 
     width: 1px;
 }
 
-// Mobile-first, filling whatever width its parent (.play__inner, capped and
-// centered) already provides — no separate max-width needed here. position:
-// relative + overflow: hidden so the confetti and bust stamp below clip
-// cleanly to the card's rounded corners instead of poking past them.
+// "Bib & Board" full-time card (the handbook's result mockup). Mobile-first,
+// filling whatever width its parent page column provides. position:
+// relative + overflow: hidden so the confetti and stamps clip cleanly to
+// the card's rounded corners. --tone is the outcome's colour, from the --tier-* ladder in app.vue:
+// exact win = bib red (the one red moment), CL green -> EL teal -> mid-table
+// slate -> avoided amber -> relegated muted; a bust is slate (never red),
+// and a daily "not quite" sits with the muted end.
 .result-panel {
+    --tone: var(--color-foreground);
+
     background-color: var(--color-surface);
-    border: 1px solid color-mix(in srgb, var(--color-foreground) 15%, transparent);
-    border-left: 4px solid var(--color-foreground);
-    border-radius: var(--radius-sharp);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-sm);
+    box-sizing: border-box;
     display: flex;
     flex-direction: column;
     gap: 1rem;
@@ -602,56 +672,67 @@ function compactStatCaption(player: { goals: number; assists: number }): string 
     width: 100%;
 }
 
-// A single coherent progression built from the same 3 tokens the rest of
-// the app already uses (primary/foreground/danger) — not 7 arbitrary
-// colors. Best to worst: full primary -> primary blending toward neutral ->
-// neutral (mid-table has no strong hue — it's supposed to read as
-// unremarkable) -> danger blending in -> full danger (relegated and bust
-// both read as "danger", relegated slightly softer since it isn't a
-// game-ending state the way bust is).
 .result-panel--win {
-    border-left-color: var(--color-primary);
+    --tone: var(--color-bib);
+
+    animation: result-panel-win-pop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+    background-color: color-mix(in srgb, var(--color-bib) 6%, var(--color-surface));
+    border-color: color-mix(in srgb, var(--color-bib) 45%, transparent);
 }
 
 .result-panel--champions-league {
-    border-left-color: color-mix(in srgb, var(--color-primary) 85%, var(--color-foreground) 15%);
+    --tone: var(--tier-cl);
 }
 
 .result-panel--europa-league {
-    border-left-color: color-mix(in srgb, var(--color-primary) 55%, var(--color-foreground) 45%);
+    --tone: var(--tier-el);
 }
 
 .result-panel--mid-table {
-    border-left-color: color-mix(in srgb, var(--color-foreground) 35%, transparent);
+    --tone: var(--tier-mid);
 }
 
 .result-panel--avoided-relegation {
-    border-left-color: color-mix(in srgb, var(--color-danger) 55%, var(--color-foreground) 45%);
+    --tone: var(--tier-avoided);
 }
 
-.result-panel--relegated {
-    border-left-color: color-mix(in srgb, var(--color-danger) 80%, var(--color-foreground) 20%);
+.result-panel--relegated,
+.result-panel--lost {
+    --tone: var(--tier-relegated);
 }
 
 .result-panel--bust {
-    animation: result-panel-bust-flash 0.5s ease-out;
-    border-left-color: var(--color-danger);
+    --tone: var(--color-bust);
+
+    animation: result-panel-bust-shake 0.4s ease-out;
 }
 
-// A Daily Challenge "didn't meet the objective" finish — a miss, not a
-// disaster, so it sits at the same softness as avoided-relegation rather
-// than reusing bust's full danger color or its flash animation.
-.result-panel--lost {
-    border-left-color: color-mix(in srgb, var(--color-danger) 55%, var(--color-foreground) 45%);
-}
-
-@keyframes result-panel-bust-flash {
+@keyframes result-panel-win-pop {
     0% {
-        background-color: color-mix(in srgb, var(--color-danger) 35%, var(--color-surface));
+        transform: scale(0.96);
     }
 
     100% {
-        background-color: var(--color-surface);
+        transform: scale(1);
+    }
+}
+
+@keyframes result-panel-bust-shake {
+    0%,
+    100% {
+        transform: translateX(0);
+    }
+
+    25% {
+        transform: translateX(-5px);
+    }
+
+    50% {
+        transform: translateX(4px);
+    }
+
+    75% {
+        transform: translateX(-2px);
     }
 }
 
@@ -667,50 +748,61 @@ function compactStatCaption(player: { goals: number; assists: number }): string 
 }
 
 .result-panel__confetti-piece {
-    animation: result-panel-confetti-fall 1.1s ease-in forwards;
+    animation: result-panel-confetti-fall 1.2s cubic-bezier(0.2, 0.6, 0.4, 1) forwards;
     background: var(--piece-color);
-    height: 8px;
+    border-radius: 1px;
+    height: 10px;
     left: var(--piece-left);
     opacity: 0;
     position: absolute;
-    top: -10px;
+    top: -12px;
     width: 6px;
 }
 
 @keyframes result-panel-confetti-fall {
     0% {
         opacity: 1;
-        transform: translateY(0) rotate(var(--piece-rotate));
+        transform: translate(0, 0) rotate(var(--piece-rotate));
+    }
+
+    80% {
+        opacity: 1;
     }
 
     100% {
         opacity: 0;
-        transform: translateY(170px) rotate(calc(var(--piece-rotate) + 180deg));
+        transform: translate(var(--piece-drift), 220px) rotate(calc(var(--piece-rotate) + 240deg));
     }
 }
 
 .result-panel__stamp {
     animation: result-panel-stamp-down 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
-    border: 3px solid var(--color-danger);
-    border-radius: var(--radius-sharp);
-    color: var(--color-danger);
+    border: 2px solid var(--tone);
+    border-radius: var(--radius-sm);
+    color: var(--tone);
     font-family: var(--font-display);
     font-size: 1.3rem;
+    font-weight: 900;
     letter-spacing: 0.1em;
-    padding: 0.15rem 0.85rem;
+    padding: 0.1rem 0.75rem;
     pointer-events: none;
     position: absolute;
-    right: 1.1rem;
+    right: 1rem;
     text-transform: var(--display-text-transform);
-    top: 1.1rem;
-    transform: rotate(-12deg);
+    top: 1rem;
+    transform: rotate(-8deg);
     z-index: 1;
+}
+
+.result-panel__stamp--win {
+    background-color: var(--color-bib);
+    color: var(--color-on-bib);
 }
 
 @keyframes result-panel-stamp-down {
     0% {
         opacity: 0;
-        transform: rotate(-12deg) scale(2.2);
+        transform: rotate(-8deg) scale(2);
     }
 
     60% {
@@ -719,101 +811,306 @@ function compactStatCaption(player: { goals: number; assists: number }): string 
 
     100% {
         opacity: 1;
-        transform: rotate(-12deg) scale(1);
+        transform: rotate(-8deg) scale(1);
     }
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .result-panel--bust {
+    .result-panel--win,
+    .result-panel--bust,
+    .result-panel__stamp {
         animation: none;
     }
 
     .result-panel__confetti {
         display: none;
     }
+}
 
-    .result-panel__stamp {
-        animation: none;
-    }
+.result-panel__head {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+
+// Keeps the headline clear of the corner stamp on the two outcomes that
+// have one.
+.result-panel--win .result-panel__head,
+.result-panel--bust .result-panel__head {
+    padding-right: 5.5rem;
+}
+
+.result-panel__eyebrow {
+    color: var(--color-muted);
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    margin: 0;
+    text-transform: uppercase;
 }
 
 .result-panel__headline {
-    font-size: 1.5rem;
+    color: var(--tone);
+    font-size: 2.25rem;
+    font-weight: 900;
     margin: 0;
-}
-
-.result-panel--win .result-panel__headline,
-.result-panel--champions-league .result-panel__headline {
-    color: var(--color-primary);
-}
-
-.result-panel--europa-league .result-panel__headline {
-    color: color-mix(in srgb, var(--color-primary) 65%, var(--color-foreground) 35%);
-}
-
-.result-panel--avoided-relegation .result-panel__headline {
-    color: color-mix(in srgb, var(--color-danger) 65%, var(--color-foreground) 35%);
-}
-
-.result-panel--relegated .result-panel__headline,
-.result-panel--bust .result-panel__headline {
-    color: var(--color-danger);
-}
-
-.result-panel--lost .result-panel__headline {
-    color: color-mix(in srgb, var(--color-danger) 65%, var(--color-foreground) 35%);
 }
 
 .result-panel__detail {
+    color: var(--color-muted);
     margin: 0;
 }
 
+// The numbers as a hairline-split strip, like the in-game ScoreBar; Total
+// is the big one and takes the outcome's tone.
 .result-panel__stats {
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-md);
     display: flex;
-    gap: 1.5rem;
     margin: 0;
+    overflow: hidden;
 }
 
 .result-panel__stat {
     display: flex;
+    flex: 1 1 0;
     flex-direction: column;
-    gap: 0.15rem;
+    gap: 0.2rem;
+    min-width: 0;
+    padding: 0.6rem 0.85rem;
+}
+
+.result-panel__stat + .result-panel__stat {
+    border-left: 1px solid var(--color-line);
 }
 
 .result-panel__stat dt {
-    color: color-mix(in srgb, var(--color-foreground) 70%, transparent);
-    font-size: 0.7rem;
-    letter-spacing: 0.08em;
+    color: var(--color-muted);
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
     text-transform: uppercase;
 }
 
 .result-panel__stat dd {
     font-family: var(--font-display);
-    font-size: 1.25rem;
-    font-weight: 700;
+    font-size: 1.75rem;
+    font-variant-numeric: tabular-nums;
+    font-weight: 900;
+    line-height: 1;
     margin: 0;
 }
 
-// Pulled out of the flat list below as its own moment — the same
-// primary/foreground/danger tokens the rest of the panel already uses, so
-// it reads correctly in both themes rather than a fixed color baked in for
-// one of them.
+.result-panel__stat--total dd {
+    color: var(--tone);
+}
+
+// The finishing-places ladder: quiet hairline rungs, with the one this game
+// reached tinted in its tier colour (text stays ink, so contrast holds for
+// every tier in both themes — only the exact rung goes solid red).
+.result-panel__ladder {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.result-panel__rung {
+    --rung-tone: var(--color-muted);
+
+    align-items: center;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-md);
+    color: var(--color-muted);
+    display: flex;
+    font-size: 0.85rem;
+    font-weight: 700;
+    gap: 0.75rem;
+    justify-content: space-between;
+    padding: 0.45rem 0.75rem;
+}
+
+.result-panel__rung--win {
+    --rung-tone: var(--color-bib);
+}
+
+.result-panel__rung--champions-league {
+    --rung-tone: var(--tier-cl);
+}
+
+.result-panel__rung--europa-league {
+    --rung-tone: var(--tier-el);
+}
+
+.result-panel__rung--mid-table {
+    --rung-tone: var(--tier-mid);
+}
+
+.result-panel__rung--avoided-relegation {
+    --rung-tone: var(--tier-avoided);
+}
+
+.result-panel__rung--relegated {
+    --rung-tone: var(--tier-relegated);
+}
+
+.result-panel__rung-label {
+    align-items: center;
+    display: flex;
+    gap: 0.5rem;
+}
+
+.result-panel__rung-label::before {
+    background-color: var(--rung-tone);
+    border-radius: 50%;
+    content: '';
+    flex-shrink: 0;
+    height: 0.5rem;
+    width: 0.5rem;
+}
+
+.result-panel__rung-range {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    font-weight: 500;
+}
+
+.result-panel__rung--hit {
+    background-color: color-mix(in srgb, var(--rung-tone) 16%, var(--color-surface));
+    border-color: var(--rung-tone);
+    color: var(--color-foreground);
+}
+
+.result-panel__rung--win.result-panel__rung--hit {
+    background-color: var(--color-bib);
+    color: var(--color-on-bib);
+}
+
+.result-panel__rung--win.result-panel__rung--hit .result-panel__rung-label::before {
+    background-color: var(--color-on-bib);
+}
+
+.result-panel__actions {
+    display: grid;
+    gap: 0.5rem;
+    grid-template-columns: 1fr 1fr;
+}
+
+.result-panel__action {
+    align-items: center;
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-md);
+    box-sizing: border-box;
+    color: var(--color-foreground);
+    cursor: pointer;
+    display: flex;
+    font: inherit;
+    font-weight: 700;
+    justify-content: center;
+    min-height: var(--tap-min);
+    padding: 0.6rem 1rem;
+    text-align: center;
+    text-decoration: none;
+    transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.result-panel__action:hover {
+    border-color: var(--color-primary);
+}
+
+.result-panel__action:active {
+    transform: scale(0.98);
+}
+
+// Play again is the screen's one main call to action, so it's the bib-red
+// button; Share image is the secondary green one; Change formation is a
+// quiet full-width ghost under them.
+.result-panel__action--primary {
+    background-color: var(--color-bib);
+    border-color: var(--color-bib);
+    color: var(--color-on-bib);
+}
+
+.result-panel__action--secondary {
+    background-color: var(--color-primary);
+    border-color: var(--color-primary);
+    color: var(--color-on-primary);
+}
+
+.result-panel__action--primary:hover,
+.result-panel__action--secondary:hover {
+    border-color: var(--color-foreground);
+}
+
+.result-panel__action--wide {
+    grid-column: 1 / -1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .result-panel__action {
+        transition: none;
+    }
+
+    .result-panel__action:active {
+        transform: none;
+    }
+}
+
+.result-panel__share {
+    align-items: center;
+    background-color: var(--color-surface-2);
+    border-radius: var(--radius-md);
+    display: flex;
+    gap: 0.75rem;
+    justify-content: space-between;
+    padding: 0.3rem 0.3rem 0.3rem 0.85rem;
+}
+
+.result-panel__share-text {
+    color: var(--color-muted);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.result-panel__share-copy {
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-sm);
+    color: var(--color-foreground);
+    cursor: pointer;
+    flex-shrink: 0;
+    font: inherit;
+    font-size: 0.8rem;
+    font-weight: 700;
+    min-height: var(--tap-min);
+    min-width: 4.5rem;
+    padding: 0 0.85rem;
+}
+
+.result-panel__share-copy:hover {
+    border-color: var(--color-primary);
+}
+
+// The top contributor pulled out of the list as its own moment — a captain-
+// style highlight, so its star and number are bib red.
 .result-panel__starman {
     align-items: center;
-    background: linear-gradient(
-        135deg,
-        color-mix(in srgb, var(--color-primary) 16%, transparent),
-        color-mix(in srgb, var(--color-primary) 3%, transparent)
-    );
-    border: 1px solid color-mix(in srgb, var(--color-primary) 35%, transparent);
-    border-radius: var(--radius-sharp);
+    background-color: var(--color-surface-2);
+    border-radius: var(--radius-md);
     display: flex;
-    gap: 0.875rem;
-    padding: 0.875rem 1rem;
+    gap: 0.75rem;
+    padding: 0.75rem 0.9rem;
 }
 
 .result-panel__starman-icon {
-    color: var(--color-primary);
+    color: var(--color-bib);
     flex-shrink: 0;
 }
 
@@ -823,18 +1120,20 @@ function compactStatCaption(player: { goals: number; assists: number }): string 
 }
 
 .result-panel__starman-label {
-    color: var(--color-primary);
-    font-size: 0.65rem;
+    color: var(--color-muted);
+    font-size: 0.68rem;
     font-weight: 700;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.1em;
     margin: 0;
     text-transform: uppercase;
 }
 
 .result-panel__starman-name {
     font-family: var(--font-display);
-    font-size: 1.15rem;
-    margin: 0.15rem 0 0;
+    font-size: 1.35rem;
+    font-weight: 800;
+    line-height: 1.05;
+    margin: 0.1rem 0 0;
     overflow: hidden;
     text-overflow: ellipsis;
     text-transform: var(--display-text-transform);
@@ -842,26 +1141,32 @@ function compactStatCaption(player: { goals: number; assists: number }): string 
 }
 
 .result-panel__starman-caption {
-    color: color-mix(in srgb, var(--color-foreground) 70%, transparent);
+    color: var(--color-muted);
     font-size: 0.75rem;
-    margin: 0.15rem 0 0;
+    margin: 0.1rem 0 0;
 }
 
 .result-panel__starman-total {
-    color: var(--color-primary);
+    align-items: center;
+    background-color: var(--color-bib);
+    border-radius: 50%;
+    color: var(--color-on-bib);
+    display: flex;
     flex-shrink: 0;
-    font-family: var(--font-display);
-    font-size: 1.75rem;
+    font-family: var(--font-mono);
+    font-size: 1rem;
     font-variant-numeric: tabular-nums;
+    font-weight: 700;
+    height: 2.75rem;
+    justify-content: center;
+    width: 2.75rem;
 }
 
 // The rest of the XI: one line each, quiet next to the spotlight above —
-// role as a small pill instead of its own uppercase line, and the g/a
-// breakdown compact right before the tally instead of stacked under it.
+// role as a small mono tag, the g/a breakdown compact before the tally.
 .result-panel__recap {
     display: flex;
     flex-direction: column;
-    gap: 0.15rem;
     list-style: none;
     margin: 0;
     padding: 0;
@@ -870,24 +1175,26 @@ function compactStatCaption(player: { goals: number; assists: number }): string 
 .result-panel__recap-item {
     align-items: center;
     display: flex;
-    gap: 0.5rem;
-    padding: 0.3rem 0;
+    gap: 0.6rem;
+    padding: 0.45rem 0;
+}
+
+.result-panel__recap-item + .result-panel__recap-item {
+    border-top: 1px solid var(--color-line);
 }
 
 .result-panel__recap-role {
-    border: 1px solid color-mix(in srgb, var(--color-foreground) 20%, transparent);
-    border-radius: var(--radius-sharp);
-    color: color-mix(in srgb, var(--color-foreground) 70%, transparent);
+    color: var(--color-muted);
     flex-shrink: 0;
-    font-size: 0.65rem;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    padding: 0.1rem 0.45rem;
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    font-weight: 600;
+    min-width: 2.25rem;
 }
 
 .result-panel__recap-name {
     flex-grow: 1;
-    font-size: 0.85rem;
+    font-size: 0.875rem;
     font-weight: 600;
     min-width: 0;
     overflow: hidden;
@@ -896,84 +1203,20 @@ function compactStatCaption(player: { goals: number; assists: number }): string 
 }
 
 .result-panel__recap-caption {
-    color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
+    color: var(--color-muted);
     flex-shrink: 0;
+    font-family: var(--font-mono);
     font-size: 0.68rem;
     white-space: nowrap;
 }
 
 .result-panel__recap-total {
     flex-shrink: 0;
-    font-family: var(--font-display);
-    font-size: 0.9rem;
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
     font-variant-numeric: tabular-nums;
     font-weight: 700;
-}
-
-.result-panel__actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.75rem;
-}
-
-.result-panel__action {
-    background-color: color-mix(in srgb, var(--color-foreground) 8%, transparent);
-    border: 1px solid color-mix(in srgb, var(--color-foreground) 20%, transparent);
-    border-radius: var(--radius-sharp);
-    color: inherit;
-    cursor: pointer;
-    flex: 1 1 auto;
-    font: inherit;
-    padding: 0.6rem 1rem;
-    text-align: center;
-    text-decoration: none;
-}
-
-// The one "ticket stub" CTA in this row — Play Again is the genuine primary
-// action once a game ends, so it gets the pill Terrace Press reserves for
-// real calls to action; Change formation and Share image stay on the shared
-// sharp-cornered base above.
-.result-panel__action--primary {
-    background-color: var(--color-primary);
-    border-color: var(--color-primary);
-    border-radius: var(--radius-stub);
-    color: var(--color-background);
-    font-weight: 700;
-}
-
-.result-panel__share {
-    align-items: center;
-    background-color: color-mix(in srgb, var(--color-foreground) 6%, transparent);
-    border-radius: var(--radius-sharp);
-    display: flex;
-    gap: 0.75rem;
-    justify-content: space-between;
-    padding: 0.6rem 0.75rem;
-}
-
-.result-panel__share-extra {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-}
-
-.result-panel__share-text {
-    color: color-mix(in srgb, var(--color-foreground) 80%, transparent);
-    font-size: 0.8rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.result-panel__share-copy {
-    background: none;
-    border: 1px solid color-mix(in srgb, var(--color-foreground) 25%, transparent);
-    border-radius: var(--radius-sharp);
-    color: inherit;
-    cursor: pointer;
-    flex-shrink: 0;
-    font: inherit;
-    font-size: 0.75rem;
-    padding: 0.3rem 0.6rem;
+    min-width: 1.75rem;
+    text-align: right;
 }
 </style>

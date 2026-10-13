@@ -37,7 +37,7 @@ const remainingLabel = computed(() => (props.status === 'playing' ? 'Remaining' 
         <div class="score-bar__row">
             <div class="score-bar__item" :class="{ 'score-bar__item--wide': targetValue === null }">
                 <span class="score-bar__label">{{ targetLabel }}</span>
-                <span v-if="targetValue !== null" class="score-bar__value">{{ targetValue }}</span>
+                <span v-if="targetValue !== null" class="score-bar__value score-bar__value--target">{{ targetValue }}</span>
             </div>
 
             <!--
@@ -62,7 +62,7 @@ const remainingLabel = computed(() => (props.status === 'playing' ? 'Remaining' 
         <div v-if="showProgressBar" aria-hidden="true" class="score-bar__track">
             <div
                 class="score-bar__fill"
-                :class="{ 'score-bar__fill--bust': status === 'bust' }"
+                :class="{ 'score-bar__fill--bust': status === 'bust', 'score-bar__fill--won': status === 'won' }"
                 :style="{ width: `${progress}%` }"
             />
         </div>
@@ -70,56 +70,85 @@ const remainingLabel = computed(() => (props.status === 'playing' ? 'Remaining' 
 </template>
 
 <style lang="scss" scoped>
+// "Bib & Board" scoreboard: one flat card split into three hairline-divided
+// cells (Target / Total / Remaining), with a thin progress track under it —
+// the handbook's pitch-screen mockup. The target is the one number in red:
+// it's what the whole game is aiming at.
 .score-bar {
-    background-color: color-mix(in srgb, var(--color-foreground) 6%, transparent);
-    border-radius: var(--radius-sharp);
+    box-sizing: border-box;
     display: flex;
     flex-direction: column;
-    gap: 0.65rem;
-    padding: 0.75rem 1.25rem;
+    gap: 0.5rem;
     width: 100%;
 }
 
 .score-bar__row {
-    align-items: center;
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-sm);
     display: flex;
     flex-wrap: wrap;
-    gap: 1rem;
-    justify-content: space-between;
+    overflow: hidden;
 }
 
 .score-bar__item {
     display: flex;
+    flex: 1 1 0;
     flex-direction: column;
-    gap: 0.15rem;
-    text-align: center;
+    gap: 0.2rem;
+    min-width: 0;
+    padding: 0.6rem 0.85rem;
+}
+
+.score-bar__item + .score-bar__item {
+    border-left: 1px solid var(--color-line);
 }
 
 // The 'allUnder' daily objective has no single target number, so its label
 // (the full objective sentence) needs more breathing room than a 3-column
-// row gives — it takes over the row instead of sitting alongside Total/Unfilled.
+// row gives — it takes over the top row instead of sitting alongside
+// Total/Unfilled.
 .score-bar__item--wide {
+    border-bottom: 1px solid var(--color-line);
     flex-basis: 100%;
     order: -1;
 }
 
+.score-bar__item--wide + .score-bar__item {
+    border-left: 0;
+}
+
 .score-bar__label {
-    color: color-mix(in srgb, var(--color-foreground) 70%, transparent);
-    font-size: 0.7rem;
-    letter-spacing: 0.08em;
+    color: var(--color-muted);
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
     text-transform: uppercase;
+}
+
+.score-bar__item--wide .score-bar__label {
+    color: var(--color-foreground);
+    font-size: 0.8rem;
+    letter-spacing: 0.04em;
 }
 
 .score-bar__value {
     font-family: var(--font-display);
-    font-size: 1.25rem;
-    font-weight: 700;
+    font-size: 1.75rem;
+    font-variant-numeric: tabular-nums;
+    font-weight: 900;
+    line-height: 1;
+}
+
+.score-bar__value--target {
+    color: var(--color-bib);
 }
 
 .score-bar__track {
-    background-color: color-mix(in srgb, var(--color-foreground) 12%, transparent);
-    border-radius: var(--radius-sharp);
-    height: 0.4rem;
+    background-color: var(--color-surface-2);
+    border-radius: var(--radius-pill);
+    height: 0.35rem;
     overflow: hidden;
     width: 100%;
 }
@@ -131,8 +160,14 @@ const remainingLabel = computed(() => (props.status === 'playing' ? 'Remaining' 
     transition: width 0.3s ease, background-color 0.2s ease;
 }
 
+// Exact hit: the bar fills in bib red. Going over is slate, never red —
+// red is celebratory in this design.
+.score-bar__fill--won {
+    background-color: var(--color-bib);
+}
+
 .score-bar__fill--bust {
-    background-color: var(--color-danger);
+    background-color: var(--color-bust);
 }
 
 @media (prefers-reduced-motion: reduce) {

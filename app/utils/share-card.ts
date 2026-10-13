@@ -9,6 +9,11 @@ export interface ShareCardSpec {
     subheading: string;
     highlight: { label: string; value: string };
     lines: string[];
+    /**
+     * Optional outcome flavour for the big number's chip: 'win' paints it bib
+     * red (the exact-hit moment), 'bust' slate. Omitted = the plain white bib.
+     */
+    tone?: 'win' | 'bust';
 }
 
 function readCssVar(name: string, fallback: string): string {
@@ -20,13 +25,25 @@ function readCssVar(name: string, fallback: string): string {
 // Canvas has no access to CSS custom properties directly — reading them live
 // at draw time (rather than hardcoding hexes) is the client-side equivalent
 // of this codebase's "always use theme tokens" rule, so the exported card
-// matches whichever theme the visitor is currently on.
+// matches whichever theme the visitor is currently on. Fallbacks are the
+// light "Bib & Board" values.
 function readTheme() {
     return {
-        background: readCssVar('--color-background', '#0b0f0d'),
-        foreground: readCssVar('--color-foreground', '#f5f5f0'),
-        primary: readCssVar('--color-primary', '#7cfb5b'),
+        background: readCssVar('--color-background', '#f3f5f1'),
+        foreground: readCssVar('--color-foreground', '#0f1d16'),
+        muted: readCssVar('--color-muted', '#5b6b62'),
+        bib: readCssVar('--color-bib', '#da291c'),
+        onBib: readCssVar('--color-on-bib', '#ffffff'),
+        bust: readCssVar('--color-bust', '#4f5d66'),
+        pitch: readCssVar('--color-pitch', '#13865c'),
+        pitchStripe: readCssVar('--color-pitch-stripe', '#0f7a53'),
+        pitchLine: readCssVar('--color-pitch-line', 'rgb(255 255 255 / 55%)'),
+        pitchInk: readCssVar('--color-pitch-ink', '#ffffff'),
+        slotBg: readCssVar('--slot-filled-bg', '#ffffff'),
+        slotInk: readCssVar('--slot-filled-ink', '#0f1d16'),
         displayFont: readCssVar('--font-display', 'sans-serif'),
+        bodyFont: readCssVar('--font-body', 'system-ui, sans-serif'),
+        monoFont: readCssVar('--font-mono', 'monospace'),
     };
 }
 
@@ -53,6 +70,80 @@ function wrapLines(ctx: CanvasRenderingContext2D, text: string, maxWidth: number
     return wrapped;
 }
 
+// roundRect() is missing from older WebKit (pre iOS 16); a square corner is
+// an acceptable fallback there.
+function roundedRectPath(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number): void {
+    ctx.beginPath();
+
+    if (typeof ctx.roundRect === 'function') {
+        ctx.roundRect(x, y, width, height, radius);
+    } else {
+        ctx.rect(x, y, width, height);
+    }
+}
+
+// The right-hand tactics board: mown stripes, thin white lines, and the
+// card's big number on a round bib chip at the centre spot.
+function drawBoard(
+    ctx: CanvasRenderingContext2D,
+    theme: ReturnType<typeof readTheme>,
+    spec: ShareCardSpec,
+    box: { x: number; y: number; width: number; height: number },
+): void {
+    const { x, y, width, height } = box;
+    const stripes = 10;
+    const stripeHeight = height / stripes;
+
+    ctx.save();
+    roundedRectPath(ctx, x, y, width, height, 32);
+    ctx.clip();
+
+    for (let index = 0; index < stripes; index++) {
+        ctx.fillStyle = index % 2 === 0 ? theme.pitch : theme.pitchStripe;
+        ctx.fillRect(x, y + index * stripeHeight, width, stripeHeight + 1);
+    }
+
+    const inset = 22;
+    const centreX = x + width / 2;
+    const centreY = y + height / 2;
+
+    ctx.strokeStyle = theme.pitchLine;
+    ctx.lineWidth = 3;
+    ctx.strokeRect(x + inset, y + inset, width - inset * 2, height - inset * 2);
+    ctx.beginPath();
+    ctx.moveTo(x + inset, centreY);
+    ctx.lineTo(x + width - inset, centreY);
+    ctx.stroke();
+    ctx.strokeRect(centreX - 90, y + inset, 180, 70);
+    ctx.strokeRect(centreX - 90, y + height - inset - 70, 180, 70);
+    ctx.restore();
+
+    const chipRadius = 112;
+    const chipFill = spec.tone === 'win' ? theme.bib : spec.tone === 'bust' ? theme.bust : theme.slotBg;
+    const chipInk = spec.tone === 'win' ? theme.onBib : spec.tone === 'bust' ? theme.background : theme.slotInk;
+
+    ctx.fillStyle = chipFill;
+    ctx.beginPath();
+    ctx.arc(centreX, centreY, chipRadius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = theme.pitchInk;
+    ctx.lineWidth = 5;
+    ctx.stroke();
+
+    ctx.fillStyle = chipInk;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `900 ${spec.highlight.value.length > 3 ? 104 : 128}px ${theme.displayFont}`;
+    ctx.fillText(spec.highlight.value, centreX, centreY + 6, chipRadius * 1.7);
+
+    ctx.fillStyle = theme.pitchInk;
+    ctx.font = `700 26px ${theme.bodyFont}`;
+    ctx.fillText(spec.highlight.label.toUpperCase(), centreX, centreY + chipRadius + 44);
+
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+}
+
 export async function buildShareCardBlob(spec: ShareCardSpec): Promise<Blob | null> {
     // Ensures the display font is actually loaded before it's drawn —
     // otherwise the first render can silently fall back to a generic
@@ -72,45 +163,48 @@ export async function buildShareCardBlob(spec: ShareCardSpec): Promise<Blob | nu
 
     const theme = readTheme();
     const padding = 72;
+    const board = { x: 760, y: 56, width: 384, height: CARD_HEIGHT - 112 };
+    const textWidth = board.x - padding * 2;
 
     ctx.fillStyle = theme.background;
     ctx.fillRect(0, 0, CARD_WIDTH, CARD_HEIGHT);
 
-    ctx.fillStyle = theme.primary;
-    ctx.fillRect(0, 0, 14, CARD_HEIGHT);
-
-    ctx.fillStyle = theme.primary;
-    ctx.font = `700 32px ${theme.displayFont}`;
-    ctx.textBaseline = 'alphabetic';
-    ctx.fillText('EXACT XI', padding, 100);
+    // Wordmark: a small bib-red tab, then EXACT XI in the display face.
+    ctx.fillStyle = theme.bib;
+    roundedRectPath(ctx, padding, 74, 12, 38, 4);
+    ctx.fill();
 
     ctx.fillStyle = theme.foreground;
-    ctx.font = `700 64px ${theme.displayFont}`;
-    const headingLines = wrapLines(ctx, spec.heading, CARD_WIDTH - padding * 2);
+    ctx.font = `900 44px ${theme.displayFont}`;
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText('EXACT XI', padding + 26, 108);
+
+    // Display face is uppercase throughout the UI (--display-text-transform);
+    // canvas has no text-transform, so it's applied here.
+    ctx.fillStyle = spec.tone === 'win' ? theme.bib : theme.foreground;
+    ctx.font = `900 92px ${theme.displayFont}`;
+    const headingLines = wrapLines(ctx, spec.heading.toUpperCase(), textWidth).slice(0, 3);
 
     headingLines.forEach((line, index) => {
-        ctx.fillText(line, padding, 210 + index * 74);
+        ctx.fillText(line, padding, 232 + index * 86);
     });
 
-    const subheadingY = 210 + headingLines.length * 74 + 20;
+    let cursorY = 232 + (headingLines.length - 1) * 86 + 62;
 
-    ctx.font = '400 32px system-ui, sans-serif';
-    ctx.fillStyle = `color-mix(in srgb, ${theme.foreground} 75%, transparent)`;
-    ctx.fillText(spec.subheading, padding, subheadingY);
+    ctx.fillStyle = theme.muted;
+    ctx.font = `500 30px ${theme.bodyFont}`;
+    wrapLines(ctx, spec.subheading, textWidth).slice(0, 3).forEach((line) => {
+        ctx.fillText(line, padding, cursorY);
+        cursorY += 40;
+    });
 
-    ctx.fillStyle = theme.primary;
-    ctx.font = `700 30px ${theme.displayFont}`;
-    ctx.fillText(spec.highlight.label.toUpperCase(), padding, subheadingY + 70);
-
-    ctx.fillStyle = theme.foreground;
-    ctx.font = `700 96px ${theme.displayFont}`;
-    ctx.fillText(spec.highlight.value, padding, subheadingY + 170);
-
-    ctx.font = '400 26px system-ui, sans-serif';
-    ctx.fillStyle = `color-mix(in srgb, ${theme.foreground} 65%, transparent)`;
+    ctx.fillStyle = theme.muted;
+    ctx.font = `500 22px ${theme.monoFont}`;
     spec.lines.forEach((line, index) => {
-        ctx.fillText(line, padding, CARD_HEIGHT - 90 + index * 34);
+        ctx.fillText(line, padding, CARD_HEIGHT - 72 - (spec.lines.length - 1 - index) * 34, textWidth);
     });
+
+    drawBoard(ctx, theme, spec, board);
 
     return new Promise((resolve) => {
         canvas.toBlob((blob) => resolve(blob), 'image/png');

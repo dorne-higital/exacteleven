@@ -6,22 +6,42 @@ const route = useRoute();
 const formationCode = computed(() => String(route.query.f ?? ''));
 const formation = computed(() => getFormation(formationCode.value));
 
-const { state, isDrawing, pendingSlotId, drawError, startGame, resumeGame, openSlot, refreshWinOdds } = useGame();
+const { state, isDrawing, pendingSlotId, drawError, drawErrorMessage, startGame, resumeGame, openSlot, refreshWinOdds } = useGame();
+
+// Whether the setup block below already resolved this page's game on the
+// client (resumed or started) — onMounted then has nothing left to do.
+let resolvedOnClient = false;
 
 // Only (re)start when there's no game yet, or it's for a different formation
 // than this route asks for — revisiting the same formation keeps whatever
-// progress is already in state rather than wiping it out. This runs
-// server-side too (sessionStorage isn't available there), so it always
-// produces a fresh game on first render — resumeGame() below corrects that
-// client-side once mounted.
+// progress is already in state rather than wiping it out. Server-side
+// (storage isn't available there) this always produces a fresh game for the
+// first render, and resumeGame() in onMounted corrects that after
+// hydration. Client-side — a client-side navigation here, or every load of
+// the ssr:false iOS app — it must try resuming FIRST: startGame() persists
+// the fresh game, which used to overwrite the saved one before onMounted
+// could read it back (losing the game and firing a spurious game_start).
 if (formation.value && state.value?.formationCode !== formation.value.code) {
-    startGame(formation.value.code);
+    if (import.meta.server) {
+        startGame(formation.value.code);
+    } else {
+        resolvedOnClient = true;
+
+        if (!resumeGame(formation.value.code)) {
+            startGame(formation.value.code);
+        }
+    }
 }
 
-// A hard refresh mid-game re-runs the block above and would otherwise wipe
-// every filled slot — this restores whatever was persisted for the current
-// formation, if anything was.
+// After SSR hydration, restores whatever was persisted for the current
+// formation, if anything was — a hard refresh mid-game would otherwise show
+// the server's fresh game in place of every filled slot.
 onMounted(() => {
+    if (resolvedOnClient) {
+        // resumeGame()/startGame() above already refreshed the odds.
+        return;
+    }
+
     if (formation.value) {
         resumeGame(formation.value.code);
     }
@@ -69,10 +89,10 @@ usePageSeoMeta({
 <template>
     <main class="play">
         <AppHeader>
-            <button aria-label="How to play" class="play__info-button" type="button" @click="openInfo">
+            <button aria-label="How to play" class="app-header-button" type="button" @click="openInfo">
                 <AppIcon name="info" />
             </button>
-            <button aria-label="Your stats" class="play__info-button" type="button" @click="openStats">
+            <button aria-label="Your stats" class="app-header-button" type="button" @click="openStats">
                 <AppIcon name="stats" />
             </button>
         </AppHeader>
@@ -93,7 +113,7 @@ usePageSeoMeta({
                 <ResultPanel v-if="gameOver" />
 
                 <p v-if="drawError" aria-live="polite" class="play__draw-error">
-                    Couldn't load players for that slot — tap it again to retry.
+                    {{ drawErrorMessage }}
                 </p>
 
                 <div class="play__board">
@@ -103,6 +123,7 @@ usePageSeoMeta({
                         :key="slot.id"
                         :busy="isDrawing || gameOver"
                         :game-over="gameOver"
+                        :active="state.activeSlotId === slot.id"
                         :loading="pendingSlotId === slot.id"
                         :slot-data="slot"
                         @select="handleSlotSelect"
@@ -131,62 +152,56 @@ usePageSeoMeta({
 // AppHeader is a direct child here (not nested inside .play__inner) so it's
 // sized by its own max-width, not this page's narrower one — see
 // AppHeader.vue for why that matters.
+// flex: 1 0 auto fills app.vue's safe-area-padded shell instead of a
+// min-height: 100vh, which (added to that padding) would scroll by the
+// notch/home-bar height in the iOS app.
 .play {
     align-items: center;
+    box-sizing: border-box;
     display: flex;
+    flex: 1 0 auto;
     flex-direction: column;
-    gap: 1.25rem;
-    min-height: 100vh;
-    padding: 1.5rem 1.25rem;
+    gap: 1rem;
+    padding: 1rem 1rem 2rem;
 }
 
 .play__inner {
     align-items: center;
     display: flex;
     flex-direction: column;
-    gap: 1.25rem;
+    gap: 0.75rem;
     max-width: 26rem;
     width: 100%;
 }
 
-.play__info-button {
-    align-items: center;
-    background-color: color-mix(in srgb, var(--color-foreground) 6%, transparent);
-    border: 1px solid color-mix(in srgb, var(--color-foreground) 15%, transparent);
-    border-radius: var(--radius-sharp);
-    color: inherit;
-    cursor: pointer;
-    display: flex;
-    height: 2.75rem;
-    justify-content: center;
-    padding: 0;
-    width: 2.75rem;
-}
-
-.play__info-button:hover,
-.play__info-button:focus-visible {
-    border-color: var(--color-primary);
-}
-
+// The formation as the screen's big display heading, like the handbook's
+// pitch mockup ("4-3-3"), left-aligned over the scoreboard.
 .play__title {
-    margin: 0;
+    align-self: stretch;
+    font-size: 2rem;
+    margin: 0.25rem 0 0;
 }
 
 .play__board {
     aspect-ratio: 2 / 3;
+    margin-top: 0.25rem;
     position: relative;
     width: 100%;
 }
 
 .play__error {
+    color: var(--color-muted);
     padding-top: 3rem;
     text-align: center;
 }
 
+// Errors are amber, never red (red is celebratory in Bib & Board).
 .play__draw-error {
-    background-color: color-mix(in srgb, var(--color-danger) 12%, transparent);
-    border-radius: var(--radius-sharp);
-    color: var(--color-danger);
+    background-color: color-mix(in srgb, var(--color-amber) 12%, var(--color-surface));
+    border: 1px solid color-mix(in srgb, var(--color-amber) 40%, transparent);
+    border-radius: var(--radius-md);
+    box-sizing: border-box;
+    color: var(--color-foreground);
     font-size: 0.85rem;
     font-weight: 600;
     margin: 0;

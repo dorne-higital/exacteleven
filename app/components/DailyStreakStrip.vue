@@ -28,6 +28,7 @@ function chipLabel(entry: DailyResultEntry): string {
 <template>
     <div v-if="!compact" class="daily-streak">
         <div class="daily-streak__header">
+            <AppIcon class="daily-streak__flame" name="flame" />
             <span class="daily-streak__count">{{ streak }}</span>
             <span class="daily-streak__label">day streak</span>
         </div>
@@ -41,107 +42,140 @@ function chipLabel(entry: DailyResultEntry): string {
                 role="listitem"
                 :title="chipLabel(entry)"
             >
-                {{ CHIP_LETTER[entry.status] }}
+                <span aria-hidden="true">{{ CHIP_LETTER[entry.status] }}</span>
+                <span class="daily-streak__sr">{{ chipLabel(entry) }}</span>
             </span>
         </div>
         <p v-else class="daily-streak__empty">Play today's challenge to start your streak.</p>
     </div>
 
-    <div v-else-if="streak > 0" class="daily-streak-badge" :title="`${streak} day streak`">
-        <AppIcon name="flame" />
-        <span class="daily-streak-badge__count">{{ streak }}</span>
-    </div>
+    <span v-else-if="streak > 0" class="daily-streak-badge">
+        <AppIcon class="daily-streak-badge__flame" name="flame" />
+        <b class="daily-streak-badge__count">{{ streak }}</b>
+        day streak
+    </span>
 </template>
 
 <style lang="scss" scoped>
+// Bib & Board form guide: the streak number in the display face, then the
+// last ten Dailies as small square chips in the mono face.
 .daily-streak {
     align-items: center;
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
+    gap: 0.5rem;
 }
 
 .daily-streak__header {
-    align-items: baseline;
+    align-items: center;
     display: flex;
-    gap: 0.4rem;
+    gap: 0.35rem;
+}
+
+.daily-streak__flame {
+    color: var(--color-bib);
 }
 
 .daily-streak__count {
     font-family: var(--font-display);
-    font-size: 1.5rem;
+    font-size: 1.75rem;
     font-variant-numeric: tabular-nums;
+    font-weight: 900;
     line-height: 1;
 }
 
 .daily-streak__label {
-    color: color-mix(in srgb, var(--color-foreground) 70%, transparent);
+    color: var(--color-muted);
     font-size: 0.7rem;
-    letter-spacing: 0.06em;
+    font-weight: 700;
+    letter-spacing: 0.1em;
     text-transform: uppercase;
 }
 
 .daily-streak__results {
     display: flex;
+    flex-wrap: wrap;
     gap: 0.3rem;
+    justify-content: center;
 }
 
 .daily-streak__chip {
     align-items: center;
-    border-radius: var(--radius-sharp);
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    box-sizing: border-box;
     display: flex;
-    font-size: 0.7rem;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
     font-weight: 700;
-    height: 1.5rem;
+    height: 1.75rem;
     justify-content: center;
-    width: 1.5rem;
+    width: 1.75rem;
 }
 
-// Same 3-token palette as StatsDialog's outcome bars — a won day is the
-// primary color, a bust is danger, a non-exact "lost" day is a neutral
-// in-between (it isn't a failure the way a bust is).
+// A won Daily is an exact hit — the celebratory red. A bust is slate (never
+// red: red means winning here), and a non-exact "lost" day is a quiet
+// outline, since it isn't a failure the way a bust is.
 .daily-streak__chip--won {
-    background-color: color-mix(in srgb, var(--color-primary) 18%, transparent);
-    color: var(--color-primary);
+    background-color: var(--color-bib);
+    color: var(--color-on-bib);
 }
 
 .daily-streak__chip--lost {
-    background-color: color-mix(in srgb, var(--color-foreground) 12%, transparent);
-    color: color-mix(in srgb, var(--color-foreground) 75%, transparent);
+    background-color: var(--color-surface-2);
+    border-color: var(--color-line);
+    color: var(--color-muted);
 }
 
 .daily-streak__chip--bust {
-    background-color: color-mix(in srgb, var(--color-danger) 16%, transparent);
-    color: var(--color-danger);
+    background-color: var(--color-bust);
+    color: var(--color-surface);
+}
+
+.daily-streak__sr {
+    border: 0;
+    clip-path: inset(50%);
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    padding: 0;
+    position: absolute;
+    white-space: nowrap;
+    width: 1px;
 }
 
 .daily-streak__empty {
-    color: color-mix(in srgb, var(--color-foreground) 70%, transparent);
-    font-size: 0.75rem;
+    color: var(--color-muted);
+    font-size: 0.8rem;
     margin: 0;
 }
 
-// Homepage card teaser — pinned to the card's top-right corner (the card is
-// DailyStreakStrip's nearest `position: relative` ancestor — see
-// index.vue's .daily-card — regardless of how deep this sits in its markup).
+// Homepage card teaser: an inline pill (the handbook's "12 day streak"
+// chip) that sits in the flow of index.vue's .mode-card__streak slot.
+// Transparent over the card's surface: the red count only clears AA
+// contrast on --color-surface, not on --color-surface-2.
 .daily-streak-badge {
     align-items: center;
-    background-color: var(--color-primary);
-    border-radius: var(--radius-sharp);
-    color: var(--color-background);
-    display: flex;
-    gap: 0.2rem;
-    padding: 0.2rem 0.4rem;
-    position: absolute;
-    right: 0.6rem;
-    top: 0.6rem;
+    background-color: transparent;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-pill);
+    color: var(--color-foreground);
+    display: inline-flex;
+    font-size: 0.72rem;
+    font-weight: 700;
+    gap: 0.25rem;
+    line-height: 1;
+    padding: 0.3rem 0.55rem 0.3rem 0.45rem;
+    white-space: nowrap;
+}
+
+.daily-streak-badge__flame,
+.daily-streak-badge__count {
+    color: var(--color-bib);
 }
 
 .daily-streak-badge__count {
-    font-family: var(--font-display);
-    font-size: 0.75rem;
+    font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
-    font-weight: 700;
-    line-height: 1;
 }
 </style>

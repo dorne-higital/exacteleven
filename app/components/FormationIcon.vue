@@ -6,7 +6,8 @@ import type { Slot } from '../../shared/types';
 // only how many dots sit on each line differs) with a dot per real slot.
 // Takes the formation's own already-computed slots (see utils/formations.ts's
 // buildSlots) rather than recalculating anything, so it can never drift out
-// of sync with the real pitch layout.
+// of sync with the real pitch layout. Drawn as a tiny Bib & Board pitch:
+// a flat green board, thin white row lines, white bib dots.
 defineProps<{
     slots: Slot[];
 }>();
@@ -26,6 +27,8 @@ function mapY(y: number): number {
 
 <template>
     <svg aria-hidden="true" class="formation-icon" viewBox="0 0 56 60">
+        <rect class="formation-icon__board" height="60" rx="9" width="56" />
+        <line class="formation-icon__halfway" x1="0" x2="56" y1="30" y2="30" />
         <line
             v-for="y in ROW_LINE_Y"
             :key="y"
@@ -41,26 +44,35 @@ function mapY(y: number): number {
             class="formation-icon__dot"
             :cx="mapX(slot.x)"
             :cy="mapY(slot.y)"
-            r="3"
+            r="3.4"
         />
     </svg>
 </template>
 
 <style lang="scss" scoped>
 .formation-icon {
+    display: block;
     flex-shrink: 0;
     height: 3.75rem;
     width: 3.5rem;
 }
 
+.formation-icon__board {
+    fill: var(--color-pitch);
+}
+
+.formation-icon__halfway {
+    stroke: var(--color-pitch-line);
+    stroke-width: 1;
+}
+
 .formation-icon__line {
-    stroke: color-mix(in srgb, var(--color-foreground) 20%, transparent);
+    stroke: color-mix(in srgb, var(--color-pitch-ink) 18%, transparent);
+    stroke-dasharray: 2 3;
     stroke-width: 1;
 }
 
 .formation-icon__dot {
-    fill: var(--color-primary);
-    stroke: var(--color-background);
-    stroke-width: 1;
+    fill: var(--slot-filled-bg);
 }
 </style>

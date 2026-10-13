@@ -23,18 +23,28 @@ const label = computed(() => (
 </template>
 
 <style lang="scss" scoped>
+// A quiet hairline card, not a coloured callout — it's encouragement, not
+// an alert. Pitch green marks the icon and the number (secondary emphasis).
 .win-odds {
     align-items: center;
-    background-color: color-mix(in srgb, var(--color-primary) 10%, transparent);
-    border: 1px solid color-mix(in srgb, var(--color-primary) 25%, transparent);
-    border-radius: var(--radius-sharp);
-    color: inherit;
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-md);
+    box-sizing: border-box;
+    color: var(--color-muted);
     display: flex;
-    font-size: 0.8rem;
-    gap: 0.5rem;
+    font-size: 0.82rem;
+    gap: 0.55rem;
     margin: 0;
-    padding: 0.6rem 0.9rem;
+    padding: 0.6rem 0.85rem;
     width: 100%;
+}
+
+.win-odds strong {
+    color: var(--color-primary);
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
 }
 
 .win-odds__icon {

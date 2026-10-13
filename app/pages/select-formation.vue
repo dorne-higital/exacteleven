@@ -15,14 +15,17 @@ usePageSeoMeta({
 <template>
     <main class="select-formation">
         <AppHeader>
-            <NuxtLink class="select-formation__back" to="/">
+            <NuxtLink class="app-header-back select-formation__back" to="/">
                 <AppIcon name="back" />
                 Home
             </NuxtLink>
         </AppHeader>
 
         <div class="select-formation__inner">
-            <h1>Pick a formation</h1>
+            <div class="select-formation__intro">
+                <h1>Pick a formation</h1>
+                <p class="select-formation__lede">Its digits are your target: 4-3-3 means land on exactly 433.</p>
+            </div>
 
             <ul class="formations">
                 <li v-for="formation in formations" :key="formation.code">
@@ -34,12 +37,16 @@ usePageSeoMeta({
                     >
                         <FormationIcon :slots="formation.slots" />
                         <span class="formations__details">
-                            <span class="formations__code">{{ formation.code }}</span>
+                            <span class="formations__code">{{ formation.code.split('').join('-') }}</span>
                             <span class="formations__rows">{{ formation.rows[0] }} DEF · {{ formation.rows[1] }} MID · {{ formation.rows[2] }} FWD</span>
                         </span>
-                        <span class="formations__tag" :class="`formations__tag--${FORMATION_DIFFICULTY[formation.code].tier}`">
-                            {{ FORMATION_DIFFICULTY[formation.code].label }}
+                        <span class="formations__end">
+                            <span class="formations__target">{{ formation.target }}</span>
+                            <span class="formations__tag" :class="`formations__tag--${FORMATION_DIFFICULTY[formation.code].tier}`">
+                                {{ FORMATION_DIFFICULTY[formation.code].label }}
+                            </span>
                         </span>
+                        <AppIcon class="formations__chevron" name="chevron" />
                     </NuxtLink>
                 </li>
             </ul>
@@ -48,43 +55,49 @@ usePageSeoMeta({
 </template>
 
 <style lang="scss" scoped>
-// AppHeader is a direct child here (not nested inside .select-formation__inner)
-// so it's sized by its own max-width, not this page's — see AppHeader.vue for
-// why that matters.
+// Bib & Board: one full-width card per formation — a mini tactics board,
+// the shape and its rows, then the target number (the thing you'll be
+// chasing) in mono with the difficulty tag. Difficulty uses green / slate /
+// amber, never red (red is celebratory — see app.vue). AppHeader is a
+// direct child here (not nested inside .select-formation__inner) so it's
+// sized by its own max-width, not this page's — see AppHeader.vue.
 .select-formation {
-    align-items: center;
+    box-sizing: border-box;
     display: flex;
+    flex: 1 0 auto;
     flex-direction: column;
     gap: 1.25rem;
-    min-height: 100vh;
-    padding: 1.5rem 1.25rem 2rem;
+    padding: 1rem 1rem 5.5rem;
 }
 
 .select-formation__inner {
     display: flex;
     flex-direction: column;
-    gap: 1.25rem;
+    gap: 1rem;
     margin: 0 auto;
-    max-width: 26rem;
+    max-width: 36rem;
     width: 100%;
 }
 
+// The back pill's look comes from AppHeader (.app-header-back); this just
+// splits it off to the left of the bar.
 .select-formation__back {
-    align-items: center;
-    color: inherit;
-    display: flex;
-    font-size: 0.85rem;
-    font-weight: 600;
-    gap: 0.4rem;
-    text-decoration: none;
+    margin-right: auto;
 }
 
-.select-formation__back:hover,
-.select-formation__back:focus-visible {
-    color: var(--color-primary);
+.select-formation__intro {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
 }
 
 h1 {
+    margin: 0;
+}
+
+.select-formation__lede {
+    color: var(--color-muted);
+    font-size: 0.9rem;
     margin: 0;
 }
 
@@ -94,7 +107,7 @@ h1 {
 .formations {
     display: flex;
     flex-direction: column;
-    gap: 0.625rem;
+    gap: 0.5rem;
     list-style: none;
     margin: 0;
     padding: 0;
@@ -103,30 +116,27 @@ h1 {
 
 .formations__link {
     align-items: center;
-    background-color: color-mix(in srgb, var(--color-foreground) 6%, transparent);
-    border: 1px solid color-mix(in srgb, var(--color-foreground) 15%, transparent);
-    border-left: 4px solid color-mix(in srgb, var(--color-foreground) 15%, transparent);
-    border-radius: var(--radius-sharp);
-    color: inherit;
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-sm);
+    color: var(--color-foreground);
     display: flex;
     gap: 0.875rem;
-    padding: 0.75rem 1rem;
+    min-height: var(--tap-min);
+    padding: 0.6rem 0.75rem 0.6rem 0.6rem;
     text-align: left;
     text-decoration: none;
     transition: border-color 0.15s ease;
 }
 
-.formations__link:hover,
-.formations__link:focus-visible {
+.formations__link:hover {
     border-color: var(--color-primary);
 }
 
-.formations__link--easier {
-    border-left-color: var(--color-primary);
-}
-
-.formations__link--hardest {
-    border-left-color: var(--color-danger);
+// Pressed = the active state, so it takes the bib red.
+.formations__link:active {
+    border-color: var(--color-bib);
 }
 
 .formations__details {
@@ -138,38 +148,63 @@ h1 {
 
 .formations__code {
     font-family: var(--font-display);
-    font-size: 1.25rem;
-    font-weight: 700;
+    font-size: 1.75rem;
+    font-weight: 900;
+    letter-spacing: 0.02em;
     line-height: 1;
 }
 
 .formations__rows {
-    color: color-mix(in srgb, var(--color-foreground) 70%, transparent);
+    color: var(--color-muted);
     font-size: 0.75rem;
-    margin-top: 0.25rem;
+    margin-top: 0.3rem;
+}
+
+.formations__end {
+    align-items: flex-end;
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    gap: 0.35rem;
+}
+
+.formations__target {
+    font-family: var(--font-mono);
+    font-size: 1rem;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    line-height: 1;
 }
 
 .formations__tag {
-    border: 1px solid currentcolor;
-    border-radius: var(--radius-sharp);
-    flex-shrink: 0;
-    font-family: var(--font-display);
+    border-radius: var(--radius-pill);
     font-size: 0.65rem;
-    letter-spacing: 0.06em;
-    padding: 0.25rem 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    padding: 0.2rem 0.55rem;
     text-transform: uppercase;
 }
 
 .formations__tag--easier {
+    background-color: color-mix(in srgb, var(--color-primary) 14%, transparent);
     color: var(--color-primary);
 }
 
 .formations__tag--balanced {
-    color: color-mix(in srgb, var(--color-foreground) 65%, transparent);
+    background-color: color-mix(in srgb, var(--color-slate) 14%, transparent);
+    color: var(--color-slate);
 }
 
+// The amber token is tuned for fills/borders; mixing it with ink keeps the
+// small tag text above 4.5:1 in the light scheme.
 .formations__tag--hardest {
-    color: var(--color-danger);
+    background-color: color-mix(in srgb, var(--color-amber) 16%, transparent);
+    color: color-mix(in srgb, var(--color-amber) 70%, var(--color-foreground));
+}
+
+.formations__chevron {
+    color: var(--color-muted);
+    flex-shrink: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {

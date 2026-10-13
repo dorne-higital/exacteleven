@@ -103,11 +103,23 @@ export type TokenVerification =
     | { valid: true; playerId: string }
     | { valid: false; reason: 'invalid' | 'expired' };
 
-export async function verifyPlayerToken(token: string, gameId: string, secret: string): Promise<TokenVerification> {
+// How long an EXPIRED token can still be re-signed by /api/refresh-tokens —
+// long enough to cover a player who closed the choice sheet (or backgrounded
+// the app) and came back to the same slot later the same day, short enough
+// that a token can't be stockpiled indefinitely.
+export const TOKEN_REFRESH_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+type SignatureCheck =
+    | { valid: true; payload: TokenPayload }
+    | { valid: false };
+
+// Signature + game binding only, no expiry — the shared core of
+// verifyPlayerToken and verifyTokenForRefresh below.
+async function checkSignature(token: string, gameId: string, secret: string): Promise<SignatureCheck> {
     const separatorIndex = token.lastIndexOf('.');
 
     if (separatorIndex === -1) {
-        return { valid: false, reason: 'invalid' };
+        return { valid: false };
     }
 
     const encodedPayload = token.slice(0, separatorIndex);
@@ -116,18 +128,47 @@ export async function verifyPlayerToken(token: string, gameId: string, secret: s
     const expectedSignature = toHex(await crypto.subtle.sign('HMAC', key, encoder.encode(encodedPayload)));
 
     if (!timingSafeEqual(expectedSignature, signature)) {
-        return { valid: false, reason: 'invalid' };
+        return { valid: false };
     }
 
     const payload = decodePayload(encodedPayload);
 
     if (!payload || payload.gameId !== gameId) {
+        return { valid: false };
+    }
+
+    return { valid: true, payload };
+}
+
+export async function verifyPlayerToken(token: string, gameId: string, secret: string): Promise<TokenVerification> {
+    const check = await checkSignature(token, gameId, secret);
+
+    if (!check.valid) {
         return { valid: false, reason: 'invalid' };
     }
 
-    if (Date.now() - payload.issuedAt > TOKEN_TTL_MS) {
+    if (Date.now() - check.payload.issuedAt > TOKEN_TTL_MS) {
         return { valid: false, reason: 'expired' };
     }
 
-    return { valid: true, playerId: payload.playerId };
+    return { valid: true, playerId: check.payload.playerId };
+}
+
+// Same checks as verifyPlayerToken, but an expired token still passes as
+// long as it's inside TOKEN_REFRESH_WINDOW_MS — used only to re-sign a token
+// for the SAME player in the SAME game (/api/refresh-tokens), never to
+// reveal anything. Re-signing can't widen what a player learns: it only ever
+// covers players this game was already genuinely offered.
+export async function verifyTokenForRefresh(token: string, gameId: string, secret: string): Promise<TokenVerification> {
+    const check = await checkSignature(token, gameId, secret);
+
+    if (!check.valid) {
+        return { valid: false, reason: 'invalid' };
+    }
+
+    if (Date.now() - check.payload.issuedAt > TOKEN_REFRESH_WINDOW_MS) {
+        return { valid: false, reason: 'expired' };
+    }
+
+    return { valid: true, playerId: check.payload.playerId };
 }
