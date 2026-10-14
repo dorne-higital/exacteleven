@@ -9,7 +9,7 @@ import { isBetterOutcome } from '../utils/scoring';
 
 const STATS_STORAGE_KEY = 'exact-xi-stats';
 
-const COUNT_KEYS = ['gamesPlayed', 'wins', 'championsLeague', 'europaLeague', 'midTable', 'avoidedRelegation', 'relegated', 'busts', 'dailyStreak', 'bestDailyStreak', 'dailyWins', 'dailyPlays'] as const;
+const COUNT_KEYS = ['gamesPlayed', 'wins', 'championsLeague', 'europaLeague', 'midTable', 'avoidedRelegation', 'relegated', 'busts', 'dailyStreak', 'bestDailyStreak', 'dailyWins', 'dailyPlays', 'unassistedWins', 'currentExactRun', 'bestExactRun'] as const;
 
 const DAILY_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -118,7 +118,28 @@ function emptyStats(): GameStats {
         dailyPlays: 0,
         lastDailyResultDate: null,
         dailyResults: [],
+        unassistedWins: 0,
+        currentExactRun: 0,
+        bestExactRun: 0,
     };
+}
+
+// Fills in the boost-era fields for stats saved before they existed, and
+// keeps them consistent with each other (they're user-editable storage).
+// Exported for tests.
+export function migrateStats(parsed: Partial<GameStats>, merged: GameStats): GameStats {
+    const next = { ...merged };
+
+    // Every win before boosts existed was unassisted.
+    if (parsed.unassistedWins === undefined) {
+        next.unassistedWins = next.wins;
+    }
+
+    next.unassistedWins = Math.min(next.unassistedWins, next.wins);
+    next.currentExactRun = Math.min(next.currentExactRun, next.unassistedWins);
+    next.bestExactRun = Math.min(Math.max(next.bestExactRun, next.currentExactRun), next.unassistedWins);
+
+    return next;
 }
 
 function readStoredStats(): GameStats {
@@ -131,12 +152,12 @@ function readStoredStats(): GameStats {
 
         const parsed = sanitizeStats(JSON.parse(raw));
 
-        return {
+        return migrateStats(parsed, {
             ...emptyStats(),
             ...parsed,
             formationPlays: { ...emptyFormationRecord(), ...parsed.formationPlays },
             formationWins: { ...emptyFormationRecord(), ...parsed.formationWins },
-        };
+        });
     } catch {
         // Private-mode/blocked storage, or corrupt JSON — start fresh for
         // this session rather than breaking the game.
@@ -200,8 +221,10 @@ export function useStats() {
 
     // Every completed game lands in exactly one bucket: won, bust, or one of
     // the 5 tiers — see useGame.ts's statsRecorded guard for the
-    // exactly-once call site.
-    function recordOutcome(status: GameStatus, tier: ResultTier | null, formationCode: FormationCode): void {
+    // exactly-once call site. `assisted` (app only: a banked boost or Pro
+    // extra was used) still counts everywhere except unassistedWins and the
+    // exact-win run, which it ends.
+    function recordOutcome(status: GameStatus, tier: ResultTier | null, formationCode: FormationCode, assisted = false): void {
         const next = {
             ...stats.value,
             gamesPlayed: stats.value.gamesPlayed + 1,
@@ -211,6 +234,15 @@ export function useStats() {
             },
         };
         let outcome: Outcome | null = null;
+
+        const unassistedWin = status === 'won' && !assisted;
+
+        next.currentExactRun = unassistedWin ? stats.value.currentExactRun + 1 : 0;
+        next.bestExactRun = Math.max(stats.value.bestExactRun, next.currentExactRun);
+
+        if (unassistedWin) {
+            next.unassistedWins += 1;
+        }
 
         if (status === 'won') {
             next.wins += 1;

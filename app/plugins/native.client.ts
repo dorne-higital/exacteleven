@@ -49,13 +49,13 @@ export default defineNuxtPlugin((nuxtApp) => {
         }
     };
 
-    // A theme switch shows up as a class / data-* / style change on <html>
+    // A theme switch shows up as a class / data-theme / data-kit / style change on <html>
     // or <body>, or as the system appearance flipping under a "follow
     // system" theme; a frame's delay lets the new CSS apply first.
     const scheduleSync = () => requestAnimationFrame(syncStatusBar);
     const observer = new MutationObserver(scheduleSync);
-    observer.observe(root, { attributes: true, attributeFilter: ['class', 'style', 'data-theme'] });
-    observer.observe(document.body, { attributes: true, attributeFilter: ['class', 'style', 'data-theme'] });
+    observer.observe(root, { attributes: true, attributeFilter: ['class', 'style', 'data-theme', 'data-kit'] });
+    observer.observe(document.body, { attributes: true, attributeFilter: ['class', 'style', 'data-theme', 'data-kit'] });
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', scheduleSync);
 
     nuxtApp.hook('app:mounted', () => {

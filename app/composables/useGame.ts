@@ -1,12 +1,16 @@
+import { computed } from 'vue';
 import { HINT_MIN_OPEN_SLOTS } from '#shared/hint';
 import type { DrawnPlayer, FormationCode, GameSlot, GameState, HintResult, Objective, Player, RefreshedToken, RevealResult, WinOdds } from '../../shared/types';
 import { trackEvent } from '../utils/analytics';
 import { apiErrorMessage, apiErrorStatus, apiFetch, classifyApiError } from '../utils/api';
 import { getObjectiveResult } from '../utils/daily-scoring';
 import { getFormation } from '../utils/formations';
+import { submitStatsToGameCenter } from '../utils/game-center';
 import { createGameId } from '../utils/game-id';
 import { haptics } from '../utils/haptics';
+import { isAppBuild } from '../utils/platform';
 import { calculateTotal, getGameResult } from '../utils/scoring';
+import { usePurchases } from './usePurchases';
 
 // The /api/daily response shape — mirrors server/api/daily.get.ts's return value.
 export interface DailyChallengePayload {
@@ -27,6 +31,46 @@ export interface ChallengePayload {
 
 const REROLLS_PER_GAME = 1;
 const HINTS_PER_GAME = 1;
+
+// What a reroll/hint tap would do right now, for the choice dialog's buttons:
+// - 'free': the game's own free one (every mode, web and app, as before)
+// - 'pro': a Pro extra (app only; never in the Daily)
+// - 'boost': spends one banked boost (app only; never in the Daily)
+// - 'shop': none left, but the shop could sell more (app only; not the Daily)
+// - 'none': nothing available (the website, the Daily, a locked hint)
+export type PowerUpReason = 'free' | 'pro' | 'boost' | 'shop' | 'none';
+
+export interface PowerUpState {
+    reason: PowerUpReason;
+    /** The game's own free uses left (the counter the button shows). */
+    freeLeft: number;
+    /** Hint only: fewer than HINT_MIN_OPEN_SLOTS slots are open, so no hint of any kind can be used. */
+    locked?: boolean;
+}
+
+export type GameMode = 'classic' | 'daily' | 'challenge';
+
+export function gameMode(game: Pick<GameState, 'dailyDate' | 'objective'>): GameMode {
+    if (game.dailyDate) {
+        return 'daily';
+    }
+
+    return game.objective ? 'challenge' : 'classic';
+}
+
+// Once a game's free reroll/hint is gone: Pro, then the bank, then the shop.
+// Boosts and Pro never apply to the Daily, and never on the website.
+function extraReason(game: GameState, isPro: boolean, boostBank: number): PowerUpReason {
+    if (!isAppBuild() || gameMode(game) === 'daily') {
+        return 'none';
+    }
+
+    if (isPro) {
+        return 'pro';
+    }
+
+    return boostBank > 0 ? 'boost' : 'shop';
+}
 // Early game, the count is an astronomically large, not-very-meaningful
 // number (see shared/types.ts's WinOdds doc comment) — waiting until the
 // picture has actually narrowed down makes it a more informative stat,
@@ -142,6 +186,8 @@ function createInitialState(formationCode: FormationCode): GameState {
         activeSlotId: null,
         offeredPlayers: [],
         statsRecorded: false,
+        assisted: false,
+        boostsSpent: 0,
     };
 }
 
@@ -182,6 +228,8 @@ function createObjectivePrefilledState(
         activeSlotId: null,
         offeredPlayers: [],
         statsRecorded: false,
+        assisted: false,
+        boostsSpent: 0,
         objective,
     };
 }
@@ -196,7 +244,7 @@ function createChallengeState(payload: ChallengePayload, challengeKey: string): 
 
 export function useGame() {
     const state = useState<GameState | null>('exact-xi-game', () => null);
-    const { recordOutcome, recordDailyOutcome } = useStats();
+    const { stats, recordOutcome, recordDailyOutcome } = useStats();
     // True while a /api/draw request is in flight (initial draw or a reroll).
     // Shared globally (like `state`) so every slot button and the choice
     // dialog agree on it, preventing two draws racing on the same exclusion
@@ -219,6 +267,64 @@ export function useGame() {
     // reroll alone, since that only reshuffles the current slot's 3
     // candidates rather than changing what's actually left to fill.
     const winOdds = useState<WinOdds | null>('exact-xi-win-odds', () => null);
+    // True while a /api/hint request is in flight, so a double tap can't
+    // spend two hints (or two boosts) on the same candidates.
+    const isHinting = useState<boolean>('exact-xi-hinting', () => false);
+    const purchases = usePurchases();
+
+    function rerollStateFor(game: GameState | null): PowerUpState {
+        if (!game || game.status !== 'playing') {
+            return { reason: 'none', freeLeft: 0 };
+        }
+
+        if (game.rerollsLeft > 0) {
+            return { reason: 'free', freeLeft: game.rerollsLeft };
+        }
+
+        return { reason: extraReason(game, purchases.isPro.value, purchases.boostBank.value), freeLeft: 0 };
+    }
+
+    function hintStateFor(game: GameState | null): PowerUpState {
+        if (!game || game.status !== 'playing') {
+            return { reason: 'none', freeLeft: 0 };
+        }
+
+        const freeLeft = Math.max(0, game.hintsLeft);
+
+        if (isHintLocked()) {
+            return { reason: 'none', freeLeft, locked: true };
+        }
+
+        if (freeLeft > 0) {
+            return { reason: 'free', freeLeft };
+        }
+
+        return { reason: extraReason(game, purchases.isPro.value, purchases.boostBank.value), freeLeft: 0 };
+    }
+
+    const canReroll = computed(() => rerollStateFor(state.value));
+    const canHint = computed(() => hintStateFor(state.value));
+
+    // Pays for a reroll/hint beyond the free one, after its request has
+    // succeeded (a network drop costs nothing): a banked boost, or Pro
+    // (Classic's extra free reroll first, then unlimited). Either way the game
+    // is flagged assisted.
+    function settleExtra(game: GameState, reason: 'pro' | 'boost', kind: 'reroll' | 'hint', analytics: Record<string, unknown>): void {
+        const mode = gameMode(game);
+        const source = reason === 'boost' ? 'bank' : 'pro';
+
+        if (reason === 'boost') {
+            purchases.spendBoost();
+            game.boostsSpent = (game.boostsSpent ?? 0) + 1;
+        } else if (kind === 'reroll' && mode === 'classic' && !game.proRerollUsed) {
+            game.proRerollUsed = true;
+        }
+
+        game.assisted = true;
+        writePersistedGame(game);
+        trackEvent(kind === 'reroll' ? 'reroll_used' : 'hint_used', { ...analytics, boost_source: source, mode });
+        trackEvent('boost_spent', { boost_kind: kind, boost_source: source, mode, formation: game.formationCode });
+    }
 
     // Non-critical and purely illustrative — a failed fetch just leaves
     // whatever was last shown (or nothing) rather than surfacing an error
@@ -345,17 +451,17 @@ export function useGame() {
     // D6: once offered in any slot's dialog, a player is excluded from every
     // later draw in the game — whether or not they were the one picked. Used
     // for both the initial draw on a slot and a reroll of that same slot.
-    async function drawForSlot(slotId: string): Promise<void> {
+    async function drawForSlot(slotId: string): Promise<boolean> {
         const game = state.value;
 
         if (!game) {
-            return;
+            return false;
         }
 
         const slot = findSlot(game, slotId);
 
         if (!slot) {
-            return;
+            return false;
         }
 
         isDrawing.value = true;
@@ -401,6 +507,8 @@ export function useGame() {
             writePersistedGame(game);
             haptics.select();
             trackEvent('slot_draw', { position: slot.group, formation: game.formationCode });
+
+            return true;
         } catch (error) {
             // Previously an unhandled rejection: the tapped slot did nothing
             // visible at all, which reads as an unresponsive app rather than
@@ -408,6 +516,8 @@ export function useGame() {
             drawError.value = true;
             drawErrorMessage.value = apiErrorMessage(classifyApiError(error), DRAW_ERROR_FALLBACK, 'tap the slot again to retry');
             trackEvent('slot_draw_error', { position: slot.group, formation: game.formationCode });
+
+            return false;
         } finally {
             isDrawing.value = false;
             pendingSlotId.value = null;
@@ -497,19 +607,40 @@ export function useGame() {
         }
     }
 
-    // D3: one reroll per game — re-draws the 3 candidates for whichever slot
-    // is currently open. The old candidates stay excluded (they were already
-    // offered), so the reroll can never repeat them.
+    // D3: one free reroll per game — re-draws the 3 candidates for whichever
+    // slot is currently open. The old candidates stay excluded (they were
+    // already offered), so the reroll can never repeat them. In the app,
+    // further rerolls (not in the Daily) come from Pro or a banked boost,
+    // paid only once the new draw has arrived. False when nothing was
+    // rerolled — with canReroll.reason 'shop', the caller opens the shop.
     async function useReroll(): Promise<boolean> {
         const game = state.value;
 
-        if (!game || game.status !== 'playing' || game.rerollsLeft <= 0 || !game.activeSlotId || isDrawing.value) {
+        // Not while a hint is in flight: it would land on candidates this
+        // reroll is replacing (and a paid hint would be wasted).
+        if (!game || game.status !== 'playing' || !game.activeSlotId || isDrawing.value || isHinting.value) {
             return false;
         }
 
-        game.rerollsLeft -= 1;
-        trackEvent('reroll_used', { formation: game.formationCode });
-        await drawForSlot(game.activeSlotId);
+        const { reason } = rerollStateFor(game);
+
+        if (reason === 'free') {
+            game.rerollsLeft -= 1;
+            trackEvent('reroll_used', { formation: game.formationCode, boost_source: 'free', mode: gameMode(game) });
+            await drawForSlot(game.activeSlotId);
+
+            return true;
+        }
+
+        if (reason !== 'pro' && reason !== 'boost') {
+            return false;
+        }
+
+        if (!await drawForSlot(game.activeSlotId)) {
+            return false;
+        }
+
+        settleExtra(game, reason, 'reroll', { formation: game.formationCode });
 
         return true;
     }
@@ -523,7 +654,9 @@ export function useGame() {
         return !!game && game.slots.filter((slot) => !slot.player).length < HINT_MIN_OPEN_SLOTS;
     }
 
-    // One hint per game — rules out whichever of the currently-offered
+    // One free hint per game (more from Pro or a banked boost in the app,
+    // outside the Daily — HINT_MIN_OPEN_SLOTS still applies to every one) —
+    // rules out whichever of the currently-offered
     // candidates leaves the fewest ways to still win, via the same
     // server-side odds math winOdds itself uses (the client never sees
     // goals/assists, so this can't be computed locally). Unlike useReroll,
@@ -532,7 +665,13 @@ export function useGame() {
     async function useHint(): Promise<string | null> {
         const game = state.value;
 
-        if (!game || game.status !== 'playing' || game.hintsLeft <= 0 || isHintLocked() || !game.activeSlotId || isDrawing.value) {
+        if (!game || game.status !== 'playing' || isHintLocked() || !game.activeSlotId || isDrawing.value || isHinting.value) {
+            return null;
+        }
+
+        const { reason } = hintStateFor(game);
+
+        if (reason !== 'free' && reason !== 'pro' && reason !== 'boost') {
             return null;
         }
 
@@ -563,26 +702,39 @@ export function useGame() {
             },
         });
 
-        try {
-            result = await requestHint();
-        } catch (error) {
-            // A reopened slot's tokens may have expired — refresh them once
-            // and retry, rather than burning nothing but still failing.
-            if (apiErrorStatus(error) !== 410 || await refreshOfferTokens(game) !== 'ok') {
-                return null;
-            }
+        const slotId = game.activeSlotId;
 
+        isHinting.value = true;
+
+        try {
             try {
                 result = await requestHint();
-            } catch {
-                return null;
+            } catch (error) {
+                // A reopened slot's tokens may have expired — refresh them once
+                // and retry, rather than burning nothing but still failing.
+                if (apiErrorStatus(error) !== 410 || await refreshOfferTokens(game) !== 'ok') {
+                    return null;
+                }
+
+                try {
+                    result = await requestHint();
+                } catch {
+                    return null;
+                }
             }
+        } finally {
+            isHinting.value = false;
         }
 
-        game.hintsLeft -= 1;
-        game.ruledOutBySlot = { ...game.ruledOutBySlot, [game.activeSlotId]: result.ruledOutId };
-        trackEvent('hint_used', { formation: game.formationCode, slots_left: remaining.length + 1 });
-        writePersistedGame(game);
+        game.ruledOutBySlot = { ...game.ruledOutBySlot, [slotId]: result.ruledOutId };
+
+        if (reason === 'free') {
+            game.hintsLeft -= 1;
+            trackEvent('hint_used', { formation: game.formationCode, slots_left: remaining.length + 1, boost_source: 'free', mode: gameMode(game) });
+            writePersistedGame(game);
+        } else {
+            settleExtra(game, reason, 'hint', { formation: game.formationCode, slots_left: remaining.length + 1 });
+        }
 
         return result.ruledOutId;
     }
@@ -720,16 +872,25 @@ export function useGame() {
                     objective: game.objective.kind,
                     status: outcome.status,
                     total: game.total,
+                    assisted: !!game.assisted,
                 });
             } else {
-                recordOutcome(outcome.status, outcome.tier, game.formationCode);
+                recordOutcome(outcome.status, outcome.tier, game.formationCode, !!game.assisted);
                 trackEvent('game_over', {
                     formation: game.formationCode,
                     status: outcome.status,
                     tier: outcome.tier,
                     total: game.total,
                     target: game.target,
+                    assisted: !!game.assisted,
                 });
+            }
+
+            // iOS app: catch the leaderboards up with the new stats (best
+            // Daily streak, unassisted exact wins, best exact run). A no-op
+            // on the website, when signed out, or when nothing went up.
+            if (!game.objective || game.dailyDate) {
+                submitStatsToGameCenter(stats.value).catch(() => {});
             }
         }
 
@@ -771,6 +932,9 @@ export function useGame() {
         drawError,
         drawErrorMessage,
         winOdds,
+        isHinting,
+        canReroll,
+        canHint,
         refreshWinOdds,
         startGame,
         resumeGame,

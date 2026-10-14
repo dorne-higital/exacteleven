@@ -22,6 +22,9 @@ function emptyStatsFixture(overrides: Partial<GameStats> = {}): GameStats {
         dailyPlays: 0,
         lastDailyResultDate: null,
         dailyResults: [],
+        unassistedWins: 0,
+        currentExactRun: 0,
+        bestExactRun: 0,
         ...overrides,
     };
 }

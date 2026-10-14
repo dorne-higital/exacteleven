@@ -1,7 +1,7 @@
 import { ref } from 'vue';
 import type { Ref } from 'vue';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { useStats } from '../app/composables/useStats';
+import { migrateStats, useStats } from '../app/composables/useStats';
 
 // Same fakeUseState pattern as useGame.test.ts — see its comment for why
 // this is enough (import.meta.client is falsy under plain vitest, so every
@@ -63,5 +63,64 @@ describe('useStats — DailyStreakStrip recent-form log (recordDailyOutcome)', (
         expect(stats.value.dailyResults).toHaveLength(10);
         expect(stats.value.dailyResults[0]!.date).toBe(dateFor(5));
         expect(stats.value.dailyResults.at(-1)!.date).toBe(dateFor(14));
+    });
+});
+
+describe('useStats — exact-win run and unassisted wins (recordOutcome)', () => {
+    it('counts unassisted exact wins and the run of them', () => {
+        const { stats, recordOutcome } = useStats();
+
+        recordOutcome('won', null, '442');
+        recordOutcome('won', null, '433');
+        recordOutcome('bust', null, '442');
+        recordOutcome('won', null, '442');
+
+        expect(stats.value.wins).toBe(3);
+        expect(stats.value.unassistedWins).toBe(3);
+        expect(stats.value.currentExactRun).toBe(1);
+        expect(stats.value.bestExactRun).toBe(2);
+    });
+
+    it('counts an assisted win as a win but not as unassisted, and ends the run', () => {
+        const { stats, recordOutcome } = useStats();
+
+        recordOutcome('won', null, '442');
+        recordOutcome('won', null, '442', true);
+
+        expect(stats.value.wins).toBe(2);
+        expect(stats.value.unassistedWins).toBe(1);
+        expect(stats.value.currentExactRun).toBe(0);
+        expect(stats.value.bestExactRun).toBe(1);
+    });
+
+    it('ends the run on a non-exact finish', () => {
+        const { stats, recordOutcome } = useStats();
+
+        recordOutcome('won', null, '442');
+        recordOutcome('finished', 'midTable', '442');
+
+        expect(stats.value.currentExactRun).toBe(0);
+        expect(stats.value.bestExactRun).toBe(1);
+    });
+});
+
+describe('useStats — migrateStats', () => {
+    it('treats every win saved before boosts existed as unassisted', () => {
+        const { stats } = useStats();
+        const old = { ...stats.value, wins: 7 };
+        const migrated = migrateStats({ wins: 7 }, { ...old, unassistedWins: 0, currentExactRun: 0, bestExactRun: 0 });
+
+        expect(migrated.unassistedWins).toBe(7);
+        expect(migrated.bestExactRun).toBe(0);
+    });
+
+    it('keeps saved values but clamps inconsistent ones', () => {
+        const { stats } = useStats();
+        const saved = { ...stats.value, wins: 4, unassistedWins: 9, currentExactRun: 6, bestExactRun: 2 };
+        const migrated = migrateStats(saved, saved);
+
+        expect(migrated.unassistedWins).toBe(4);
+        expect(migrated.currentExactRun).toBe(4);
+        expect(migrated.bestExactRun).toBe(4);
     });
 });

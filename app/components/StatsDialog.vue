@@ -4,10 +4,27 @@ import type { AchievementCategory, AchievementProgress } from '../utils/achievem
 import type { Outcome } from '../utils/scoring';
 import { getAchievementProgress, TIERS } from '../utils/achievements';
 import { FORMATION_DIFFICULTY, formations } from '../utils/formations';
+import { isAvailable as gameCenterAvailable, showLeaderboards } from '../utils/game-center';
+import { isAppBuild } from '../utils/platform';
 
 const open = defineModel<boolean>('open', { default: false });
 
 const { stats, resetStats } = useStats();
+
+// App only: the Pro badge, the unassisted-wins count (on the website every
+// win is unassisted, so it would just repeat Wins) and the Game Center
+// button. The best run of exact Classic wins shows on both.
+const isApp = isAppBuild();
+const { isPro } = usePurchases();
+const canOpenLeaderboards = ref(false);
+
+onMounted(() => {
+    canOpenLeaderboards.value = gameCenterAvailable();
+});
+
+function openLeaderboards(): void {
+    void showLeaderboards();
+}
 
 const activeTab = ref<'stats' | 'achievements'>('stats');
 
@@ -168,6 +185,11 @@ function handleReset(): void {
             class="stats-dialog__panel"
             role="tabpanel"
         >
+            <p v-if="isApp && isPro" class="stats-dialog__pro">
+                <span class="stats-dialog__pro-badge">Pro</span>
+                Thanks for backing Exact XI
+            </p>
+
             <div class="stats-dialog__hero">
                 <div class="stats-dialog__hero-stat">
                     <span class="stats-dialog__hero-value">{{ stats.gamesPlayed }}</span>
@@ -187,6 +209,21 @@ function handleReset(): void {
                 <span class="stats-dialog__best-label">Best</span>
                 <span class="stats-dialog__best-value">{{ bestResultLabel }}</span>
             </p>
+
+            <dl class="stats-dialog__runs">
+                <div class="stats-dialog__run">
+                    <dt>Exact-win run</dt>
+                    <dd>{{ stats.currentExactRun }}</dd>
+                </div>
+                <div class="stats-dialog__run">
+                    <dt>Best run</dt>
+                    <dd>{{ stats.bestExactRun }}</dd>
+                </div>
+                <div v-if="isApp" class="stats-dialog__run">
+                    <dt>Unassisted wins</dt>
+                    <dd>{{ stats.unassistedWins }}</dd>
+                </div>
+            </dl>
 
             <div class="stats-dialog__bars">
                 <div v-for="row in BAR_ROWS" :key="row.outcome" class="stats-dialog__bar-row">
@@ -230,6 +267,11 @@ function handleReset(): void {
                     </div>
                 </div>
             </div>
+
+            <button v-if="isApp && canOpenLeaderboards" class="stats-dialog__leaderboards" type="button" @click="openLeaderboards">
+                <AppIcon name="trophy" />
+                Game Center leaderboards
+            </button>
 
             <button class="stats-dialog__reset" type="button" @click="handleReset">Reset stats</button>
         </div>
@@ -344,7 +386,10 @@ function handleReset(): void {
 .stats-dialog__tab--active {
     background-color: var(--color-surface);
     border-color: var(--color-line);
-    box-shadow: inset 0 -2px 0 var(--color-bib), var(--shadow-sm);
+
+    // Not combined with var(--shadow-sm): that token is none in dark mode
+    // and several kits, which would void the whole list and lose the red.
+    box-shadow: inset 0 -2px 0 var(--color-bib);
     color: var(--color-foreground);
 }
 
@@ -398,7 +443,7 @@ function handleReset(): void {
     flex-wrap: wrap;
     font-size: 0.875rem;
     gap: 0.5rem;
-    margin: 0 0 1.25rem;
+    margin: 0 0 0.75rem;
     padding: 0.6rem 0.8rem;
 }
 
@@ -412,6 +457,92 @@ function handleReset(): void {
 
 .stats-dialog__best-value {
     font-weight: 700;
+}
+
+// Pro: a small bib-red badge (the "captain-style highlight" use of red).
+.stats-dialog__pro {
+    align-items: center;
+    color: var(--color-muted);
+    display: flex;
+    font-size: 0.8rem;
+    font-weight: 600;
+    gap: 0.5rem;
+    margin: 0 0 0.75rem;
+}
+
+.stats-dialog__pro-badge {
+    background-color: var(--color-bib);
+    border-radius: var(--radius-pill);
+    color: var(--color-on-bib);
+    font-family: var(--font-display);
+    font-size: 0.85rem;
+    font-weight: 900;
+    letter-spacing: 0.06em;
+    padding: 0.1rem 0.6rem;
+    text-transform: uppercase;
+}
+
+// Exact-win runs: a quiet row of mono counts under the Best line.
+.stats-dialog__runs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin: 0 0 1.25rem;
+}
+
+.stats-dialog__run {
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-md);
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+    gap: 0.2rem;
+    min-width: 6rem;
+    padding: 0.5rem 0.7rem;
+}
+
+.stats-dialog__run dt {
+    color: var(--color-muted);
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+
+.stats-dialog__run dd {
+    font-family: var(--font-mono);
+    font-size: 1.1rem;
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+    margin: 0;
+}
+
+.stats-dialog__leaderboards {
+    align-items: center;
+    align-self: flex-start;
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-md);
+    color: var(--color-foreground);
+    cursor: pointer;
+    display: inline-flex;
+    font: inherit;
+    font-size: 0.85rem;
+    font-weight: 700;
+    gap: 0.4rem;
+    margin-top: 1.5rem;
+    min-height: var(--tap-min);
+    padding: 0 1rem;
+}
+
+.stats-dialog__leaderboards:hover,
+.stats-dialog__leaderboards:focus-visible {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+}
+
+.stats-dialog__leaderboards + .stats-dialog__reset {
+    margin-top: 0.75rem;
 }
 
 .stats-dialog__bars {

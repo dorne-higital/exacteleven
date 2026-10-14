@@ -2890,6 +2890,24 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@revenuecat/purchases-capacitor@npm:^13.7.0":
+  version: 13.7.4
+  resolution: "@revenuecat/purchases-capacitor@npm:13.7.4"
+  dependencies:
+    "@revenuecat/purchases-typescript-internal-esm": "npm:19.12.0"
+  peerDependencies:
+    "@capacitor/core": ">=8.0.0"
+  checksum: 10c0/d7aec16ce10788844eaf7e48ce6412c2ee55ff813a5b7e9ddf9b1fe0de607dd7ed31a6ec8c448f2878018c6b41fdc648872f8c946e1c6d4f6878a591f7910a66
+  languageName: node
+  linkType: hard
+
+"@revenuecat/purchases-typescript-internal-esm@npm:19.12.0":
+  version: 19.12.0
+  resolution: "@revenuecat/purchases-typescript-internal-esm@npm:19.12.0"
+  checksum: 10c0/211174a84a5c96ca016b1e0d28bc0a0d09499c4535118700619ff95f62cefc217b5f07d56ce9d782d92918e21ac56ebbb819c0781ed912073e6d3fe35d93fb88
+  languageName: node
+  linkType: hard
+
 "@rolldown/binding-android-arm-eabi@npm:1.2.9":
   version: 1.2.9
   resolution: "@rolldown/binding-android-arm-eabi@npm:1.2.9"
@@ -6394,6 +6412,7 @@ __metadata:
     "@nuxt/fonts": "npm:0.14.0"
     "@nuxt/test-utils": "npm:^4.3.2"
     "@nuxtjs/seo": "npm:^5.3.16"
+    "@revenuecat/purchases-capacitor": "npm:^13.7.0"
     "@stylistic/stylelint-plugin": "npm:^5.3.0"
     "@types/node": "npm:^26.6.2"
     "@vue/test-utils": "npm:^2.5.1"

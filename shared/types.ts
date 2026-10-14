@@ -145,4 +145,15 @@ export interface GameState {
     dailyDate?: string;
     /** Set only for a custom challenge-link game — the canonical encoded config it was generated from, used to resume it correctly. A challenge game has `objective` but no `dailyDate`, which is what tells useGame.ts's pickPlayer() not to touch classic stats or the daily streak. */
     challengeKey?: string;
+    /**
+     * App only: true once a banked boost or a Pro extra was used in this game
+     * (never in the Daily). The game still counts in stats, but not for Game
+     * Center or unassisted wins / the exact-win run. Optional: games persisted
+     * before boosts existed don't have it (= false).
+     */
+    assisted?: boolean;
+    /** App only: how many banked boosts this game spent (Pro extras don't count). Optional, as above (= 0). */
+    boostsSpent?: number;
+    /** App only: whether Pro's extra free Classic reroll has been used this game. Optional, as above (= false). */
+    proRerollUsed?: boolean;
 }

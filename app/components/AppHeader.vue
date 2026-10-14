@@ -11,6 +11,17 @@
 //   .app-header-button        a 44px square icon button
 //   .app-header-back          a 44px-tall "‹ Home" style back pill
 // The page's own click handler / trackEvent() stays on the element.
+//
+// The Settings gear is built in (web and app), after the page's own
+// controls, on every page except Settings itself.
+import { trackEvent } from '../utils/analytics';
+
+const route = useRoute();
+const onSettings = computed(() => route.path === '/settings');
+
+function openSettings(): void {
+    trackEvent('view_settings', { source: String(route.name ?? route.path) });
+}
 </script>
 
 <template>
@@ -23,6 +34,9 @@
 
         <div class="app-header__actions">
             <slot />
+            <NuxtLink v-if="!onSettings" aria-label="Settings" class="app-header-button" to="/settings" @click="openSettings">
+                <AppIcon name="gear" />
+            </NuxtLink>
         </div>
     </header>
 </template>

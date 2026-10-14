@@ -43,4 +43,10 @@ export interface GameStats {
     lastDailyResultDate: string | null;
     /** The most recent Daily Challenge results (oldest first), capped to a rolling window — feeds StatsDialog's Season Table. */
     dailyResults: DailyResultEntry[];
+    /** Exact Classic wins with no banked boost or Pro extra used — a subset of `wins`, and what Game Center's exact-wins board reads. Stats saved before boosts existed start this at `wins` (every earlier win was unassisted). */
+    unassistedWins: number;
+    /** The current run of consecutive unassisted exact Classic wins. Any other Classic finish — including an assisted one, so boosts can't rescue a run — ends it. */
+    currentExactRun: number;
+    /** The longest currentExactRun ever reached — monotonic; Game Center's best-run board reads it. */
+    bestExactRun: number;
 }

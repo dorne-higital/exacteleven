@@ -1,14 +1,39 @@
 <script setup lang="ts">
 import type { DrawnPlayer, PositionGroup } from '../../shared/types';
+import { gameMode } from '../composables/useGame';
+import { trackEvent } from '../utils/analytics';
 import { describeSlotRole } from '../utils/formations';
+import { isAppBuild } from '../utils/platform';
+import { powerUpButton, powerUpNote } from '../utils/power-ups';
+import type { PowerUpKind } from '../utils/power-ups';
 import { classifyReveal, pickFlavorLine } from '../utils/reveal-flavor';
 
-const { state, isDrawing, pickPlayer, useReroll, useHint, isHintLocked, closeDialog } = useGame();
+const { state, isDrawing, pickPlayer, useReroll, useHint, closeDialog, canReroll, canHint } = useGame();
+const { boostBank } = usePurchases();
+const { openShop } = useShop();
 
 const candidates = computed(() => state.value?.offeredPlayers ?? []);
-const rerollsLeft = computed(() => state.value?.rerollsLeft ?? 0);
-const hintsLeft = computed(() => state.value?.hintsLeft ?? 0);
-const hintLocked = computed(() => isHintLocked());
+
+// Reroll / Hint button copy and behaviour from useGame's canReroll/canHint:
+// the free one, then (app only, never the Daily) Pro, a banked boost, or a
+// "Get boosts" button into the shop — see utils/power-ups.ts.
+const mode = computed(() => (state.value ? gameMode(state.value) : null));
+const rerollButton = computed(() => powerUpButton('reroll', canReroll.value, boostBank.value));
+const hintButton = computed(() => powerUpButton('hint', canHint.value, boostBank.value));
+const powerUpHelp = computed(() => powerUpNote(mode.value, isAppBuild(), canReroll.value, canHint.value));
+
+// boost_bank_empty: once per sheet per kind, the first time a button turns
+// into "Get boosts" (the empty-bank prompt the shop funnel starts from).
+const emptyBankLogged = new Set<PowerUpKind>();
+
+watch([() => rerollButton.value.action, () => hintButton.value.action], ([reroll, hint]) => {
+    for (const [kind, action] of [['reroll', reroll], ['hint', hint]] as const) {
+        if (action === 'shop' && !emptyBankLogged.has(kind)) {
+            emptyBankLogged.add(kind);
+            trackEvent('boost_bank_empty', { boost_kind: kind, mode: mode.value });
+        }
+    }
+}, { immediate: true });
 // Which currently-offered candidate the last hint ruled out, if any. Lives
 // in the game state per slot (useGame clears it whenever that slot gets a
 // new draw, since a stale hint is meaningless once the options change), so
@@ -333,10 +358,16 @@ watch(isDrawing, (drawing) => {
 });
 
 async function handleReroll(): Promise<void> {
-    // useReroll() itself also no-ops once rerollsLeft is 0, but aria-disabled
+    // useReroll() itself also no-ops when nothing's left, but aria-disabled
     // (unlike the native disabled attribute) doesn't block the click at the
     // DOM level, so check here too for a clean fast path.
-    if (revealing.value || isDrawing.value || isScrambling.value || rerollsLeft.value <= 0) {
+    if (revealing.value || isDrawing.value || isScrambling.value || rerollButton.value.action === 'none') {
+        return;
+    }
+
+    if (rerollButton.value.action === 'shop') {
+        openShop('reroll_button');
+
         return;
     }
 
@@ -352,7 +383,13 @@ async function handleHint(): Promise<void> {
     // Also blocks a second tap once a hint is already showing for
     // these exact candidates — re-asking would just spend a hint to learn
     // the same answer again.
-    if (revealing.value || isDrawing.value || isScrambling.value || hintsLeft.value <= 0 || hintLocked.value || ruledOutId.value) {
+    if (revealing.value || isDrawing.value || isScrambling.value || hintButton.value.action === 'none' || ruledOutId.value) {
+        return;
+    }
+
+    if (hintButton.value.action === 'shop') {
+        openShop('hint_button');
+
         return;
     }
 
@@ -451,8 +488,8 @@ function handleBackdropClick(event: MouseEvent): void {
         <div v-if="!showResult" class="player-choice__actions">
             <button
                 class="player-choice__reroll"
-                :class="{ 'player-choice__reroll--rolling': rerollSpinning }"
-                :aria-disabled="rerollsLeft <= 0 || revealing || isDrawing || isScrambling"
+                :class="{ 'player-choice__reroll--rolling': rerollSpinning, 'player-choice__reroll--shop': rerollButton.action === 'shop' }"
+                :aria-disabled="rerollButton.action === 'none' || revealing || isDrawing || isScrambling"
                 type="button"
                 @click="handleReroll"
             >
@@ -464,13 +501,13 @@ function handleBackdropClick(event: MouseEvent): void {
                     <circle cx="8" cy="16" fill="currentColor" r="1.4" />
                     <circle cx="16" cy="16" fill="currentColor" r="1.4" />
                 </svg>
-                Reroll · {{ rerollsLeft }} left
+                {{ rerollButton.label }}
             </button>
 
             <button
                 class="player-choice__hint"
-                :class="{ 'player-choice__hint--loading': hintLoading }"
-                :aria-disabled="hintsLeft <= 0 || hintLocked || revealing || isDrawing || isScrambling || !!ruledOutId"
+                :class="{ 'player-choice__hint--loading': hintLoading, 'player-choice__hint--shop': hintButton.action === 'shop' }"
+                :aria-disabled="hintButton.action === 'none' || revealing || isDrawing || isScrambling || !!ruledOutId"
                 type="button"
                 @click="handleHint"
             >
@@ -483,9 +520,11 @@ function handleBackdropClick(event: MouseEvent): void {
                         stroke-width="2"
                     />
                 </svg>
-                {{ hintLocked && hintsLeft > 0 ? 'Hint (locked)' : `Hint · ${hintsLeft} left` }}
+                {{ hintButton.label }}
             </button>
         </div>
+
+        <p v-if="!showResult && powerUpHelp" class="player-choice__power-note">{{ powerUpHelp }}</p>
     </dialog>
 </template>
 
@@ -875,6 +914,22 @@ function handleBackdropClick(event: MouseEvent): void {
 .player-choice__hint-icon {
     color: var(--color-primary);
     flex-shrink: 0;
+}
+
+// "Get boosts" (app only): still a quiet button — picking a player stays the
+// sheet's main action — but in pitch green so it reads as a way forward
+// rather than a spent counter.
+.player-choice__reroll--shop,
+.player-choice__hint--shop {
+    border-color: color-mix(in srgb, var(--color-primary) 45%, transparent);
+    color: var(--color-primary);
+}
+
+.player-choice__power-note {
+    color: var(--color-muted);
+    font-size: 0.75rem;
+    margin: 0.5rem 0 0;
+    text-align: center;
 }
 
 // A full tumble (spin + a punch of scale at the midpoint) while a reroll's

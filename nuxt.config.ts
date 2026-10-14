@@ -154,6 +154,10 @@ export default defineNuxtConfig({
             // container per environment (e.g. a staging workspace). Empty in
             // the app build: no GTM inside the iOS webview (see r1 plan 6.5).
             gtmId: isApp ? '' : 'GTM-KZD42V9R',
+            // RevenueCat's public Apple SDK key (REVENUECAT_APPLE_KEY, set in
+            // codemagic.yaml). App build only; unset, purchases are switched
+            // off gracefully (see app/composables/usePurchases.ts).
+            revenuecatAppleKey: isApp ? (process.env.REVENUECAT_APPLE_KEY ?? '') : '',
         },
     },
     security: {

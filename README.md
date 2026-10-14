@@ -31,6 +31,10 @@ The app has no server of its own, so it calls the live site's API at `https://ex
 
 **The API is additive-only.** Shipped app builds keep calling the same routes for months, so never remove or rename a route, a request param, or a response field, and never change what a status code means (410 = token expired, 403 = rejected token). New params must be optional with the old behavior as the default. A genuinely breaking change ships as a new route (e.g. `/api/v2/draw`) alongside the old one, which is only removed once `NUXT_APP_MIN_BUILD` excludes every build that uses it.
 
+### App-only features
+
+Purchases (RevenueCat: Pro, boost packs, Kit Bag, tips), Game Center leaderboards and the iCloud backup exist only in the iOS app. They live in `app/composables/usePurchases.ts`, `app/utils/game-center.ts` and `app/plugins/icloud-backup.client.ts`, and each is a no-op on the website: the RevenueCat SDK is only loaded through a dynamic import behind `isNativeApp()`, and the native Game Center / iCloud plugins are only registered inside the native shell. Boosts and Pro never touch the Daily; a game that used one is flagged `assisted` and doesn't count for the Game Center boards or `unassistedWins`. `REVENUECAT_APPLE_KEY` (set in `codemagic.yaml`) becomes `runtimeConfig.public.revenuecatAppleKey` in the app build only; unset, purchases are switched off. Settings (`/settings`) shows Appearance on both builds and adds the Kit Bag, Purchases, Leaderboards and Haptics in the app. Store setup and how to test purchases in TestFlight: `APP_STORE_SETUP.md` (sections 10 and 11).
+
 ## Data
 
 `server/assets/players.json` is the player pool the game draws from, built from public Premier League data:

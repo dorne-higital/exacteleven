@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { isAppBuild } from './utils/platform';
+import { themeBootScript } from './utils/themes';
 
 const { loadStats } = useStats();
 
@@ -24,13 +25,20 @@ const isApp = isAppBuild();
 const loadGtm = !isApp && Boolean(gtmId);
 
 // The browser UI tint (Safari's toolbar, Android's status bar) follows the
-// page background in each scheme — kept in step with --color-background
-// below by hand, since a <meta> can't read a CSS custom property.
+// page background in each scheme. A <meta> can't read a CSS custom property,
+// so the colours come from the theme catalogue (app/utils/themes.ts, which
+// a test keeps equal to the tokens below) for the current Appearance + kit.
+// Server-rendered, that's always Bib & Board following the system.
+const { browserTheme } = useTheme();
+const themeColorLight = computed(() => browserTheme.value.light);
+const themeColorDark = computed(() => browserTheme.value.dark);
+const colorSchemeMeta = computed(() => browserTheme.value.colorScheme);
+
 useHead({
     meta: [
-        { key: 'theme-color-light', name: 'theme-color', content: '#f3f5f1', media: '(prefers-color-scheme: light)' },
-        { key: 'theme-color-dark', name: 'theme-color', content: '#0b1410', media: '(prefers-color-scheme: dark)' },
-        { key: 'color-scheme', name: 'color-scheme', content: 'light dark' },
+        { key: 'theme-color-light', name: 'theme-color', content: themeColorLight, media: '(prefers-color-scheme: light)' },
+        { key: 'theme-color-dark', name: 'theme-color', content: themeColorDark, media: '(prefers-color-scheme: dark)' },
+        { key: 'color-scheme', name: 'color-scheme', content: colorSchemeMeta },
     ],
 });
 
@@ -44,6 +52,16 @@ useHead({
 if (!isApp) {
     useHead({
         script: [
+            // Sets the saved Appearance (data-theme) before the first paint,
+            // so a forced light/dark choice never flashes the system one.
+            // Inline like the GTM bootstrap, so it gets the same CSP nonce.
+            // The app build has no server-rendered HTML; its theme plugin
+            // (app/plugins/theme.client.ts) applies the theme before mount.
+            {
+                key: 'theme-boot',
+                innerHTML: themeBootScript(),
+                tagPriority: 'critical',
+            },
             ...(loadGtm
                 ? [{
                     key: 'gtm-init',
@@ -83,6 +101,8 @@ if (!isApp) {
         <NuxtPage />
         <AchievementToast />
         <UpdatePrompt v-if="isApp" />
+        <!-- App only: the website has no shop (useShop().openShop() is a no-op there). -->
+        <LazyShopSheet v-if="isApp" />
     </div>
 </template>
 
@@ -236,9 +256,9 @@ if (!isApp) {
     color-scheme: light;
 }
 
-// Follows the system setting by default; a future in-app toggle only has
-// to set data-theme="light" | "dark" on <html> to force either one (the
-// native status-bar plugin already watches that attribute).
+// Follows the system setting by default; the Appearance setting
+// (app/composables/useTheme.ts) sets data-theme="light" | "dark" on <html>
+// to force either one (the native status-bar plugin watches that attribute).
 @media (prefers-color-scheme: dark) {
     :root:not([data-theme='light']) {
         @include dark-tokens;
@@ -247,6 +267,276 @@ if (!isApp) {
 
 :root[data-theme='dark'] {
     @include dark-tokens;
+}
+
+// ===================================================================
+// KIT BAG — alternative palettes (app only; unlocked by Kit Bag or Pro).
+// app/utils/themes.ts is the catalogue (names, blurbs, swatches, which
+// modes each kit has) and holds these exact values too —
+// tests/themes.test.ts checks the two match and that every text pair
+// passes WCAG AA, so change a colour in both places.
+// - data-kit="<id>" on <html> selects a kit; no attribute = Bib & Board.
+// - Every kit sets every colour token below, so nothing leaks through
+//   from Bib & Board's light/dark blocks.
+// - 'both' kits have a light and a dark palette and follow data-theme /
+//   the system like Bib & Board does. Floodlights and Chalkboard are
+//   fixed dark, Winter Fixture is fixed light, whatever the appearance.
+// - The rules above still hold inside a kit: --color-bib is that kit's
+//   scarce accent (CTA / exact / active), busts stay --color-bust.
+// ===================================================================
+
+@mixin kit-floodlights {
+    --color-background: #070d1c;
+    --color-surface: #0f1830;
+    --color-surface-2: #17223f;
+    --color-foreground: #eef2ff;
+    --color-muted: #97a3c4;
+    --color-line: rgb(238 242 255 / 12%);
+    --color-primary: #5ad6a0;
+    --color-on-primary: #03140c;
+    --color-primary-strong: #02060f;
+    --color-bib: #ffa62b;
+    --color-on-bib: #1f1100;
+    --color-amber: #ffd27a;
+    --color-teal: #5fd0e0;
+    --color-slate: #a9b3cc;
+    --color-pitch: #0f4033;
+    --color-pitch-stripe: #0d382d;
+    --color-pitch-line: rgb(255 255 255 / 34%);
+    --color-pitch-ink: #eef2ff;
+    --slot-empty-bg: rgb(255 255 255 / 6%);
+    --slot-filled-bg: #eef2ff;
+    --slot-filled-ink: #070d1c;
+    --shadow-sm: none;
+    --shadow-lg: 0 18px 48px rgb(0 0 0 / 60%);
+    --body-texture: radial-gradient(ellipse 60% 40% at 12% -8%, rgb(255 196 110 / 11%), transparent 70%), radial-gradient(ellipse 60% 40% at 88% -8%, rgb(255 196 110 / 11%), transparent 70%);
+    --body-texture-size: auto;
+
+    color-scheme: dark;
+}
+
+@mixin kit-chalkboard {
+    --color-background: #1a2321;
+    --color-surface: #232e2c;
+    --color-surface-2: #2c3836;
+    --color-foreground: #f1efe6;
+    --color-muted: #a8b2ac;
+    --color-line: rgb(241 239 230 / 16%);
+    --color-primary: #9fd8b4;
+    --color-on-primary: #0f1f17;
+    --color-primary-strong: #0b100f;
+    --color-bib: #f5d76e;
+    --color-on-bib: #231c02;
+    --color-amber: #f4a96a;
+    --color-teal: #93d2d6;
+    --color-slate: #b8c0c4;
+    --color-pitch: #2a3a35;
+    --color-pitch-stripe: #273631;
+    --color-pitch-line: rgb(241 239 230 / 45%);
+    --color-pitch-ink: #f1efe6;
+    --slot-empty-bg: rgb(241 239 230 / 6%);
+    --slot-filled-bg: #f1efe6;
+    --slot-filled-ink: #1a2321;
+    --shadow-sm: none;
+    --shadow-lg: 0 18px 48px rgb(0 0 0 / 55%);
+    --body-texture: radial-gradient(ellipse 50% 30% at 18% 28%, rgb(241 239 230 / 5%), transparent 70%), radial-gradient(ellipse 45% 25% at 82% 72%, rgb(241 239 230 / 4%), transparent 70%);
+    --body-texture-size: auto;
+
+    color-scheme: dark;
+}
+
+@mixin kit-programme-light {
+    --color-background: #f1e8d4;
+    --color-surface: #fbf6ea;
+    --color-surface-2: #e7dcc4;
+    --color-foreground: #1b2338;
+    --color-muted: #5b5546;
+    --color-line: rgb(27 35 56 / 16%);
+    --color-primary: #1f3d6e;
+    --color-on-primary: #fbf6ea;
+    --color-primary-strong: #0f1c33;
+    --color-bib: #a8322a;
+    --color-on-bib: #fff8ec;
+    --color-amber: #8a5a00;
+    --color-teal: #1c6670;
+    --color-slate: #4b5466;
+    --color-pitch: #3d6a3f;
+    --color-pitch-stripe: #386239;
+    --color-pitch-line: rgb(251 246 234 / 55%);
+    --color-pitch-ink: #fbf6ea;
+    --slot-empty-bg: rgb(251 246 234 / 8%);
+    --slot-filled-bg: #fbf6ea;
+    --slot-filled-ink: #1b2338;
+    --shadow-sm: 0 1px 0 rgb(27 35 56 / 10%);
+    --shadow-lg: 0 18px 40px rgb(27 35 56 / 22%);
+    --body-texture: radial-gradient(rgb(27 35 56 / 6%) 1px, transparent 1.2px);
+    --body-texture-size: 6px 6px;
+
+    color-scheme: light;
+}
+
+@mixin kit-programme-dark {
+    --color-background: #131a2b;
+    --color-surface: #1b2338;
+    --color-surface-2: #242d45;
+    --color-foreground: #f3ead6;
+    --color-muted: #aea690;
+    --color-line: rgb(243 234 214 / 13%);
+    --color-primary: #93b4e6;
+    --color-on-primary: #0d1424;
+    --color-primary-strong: #070b15;
+    --color-bib: #f07a6c;
+    --color-on-bib: #220805;
+    --color-amber: #e8b65c;
+    --color-teal: #72c4ca;
+    --color-slate: #adb4c4;
+    --color-pitch: #28452c;
+    --color-pitch-stripe: #243e27;
+    --color-pitch-line: rgb(243 234 214 / 32%);
+    --color-pitch-ink: #f3ead6;
+    --slot-empty-bg: rgb(243 234 214 / 5%);
+    --slot-filled-bg: #f3ead6;
+    --slot-filled-ink: #131a2b;
+    --shadow-sm: none;
+    --shadow-lg: 0 18px 48px rgb(0 0 0 / 55%);
+    --body-texture: radial-gradient(rgb(243 234 214 / 4%) 1px, transparent 1.2px);
+    --body-texture-size: 6px 6px;
+
+    color-scheme: dark;
+}
+
+@mixin kit-away-light {
+    --color-background: #eef5fb;
+    --color-surface: #fff;
+    --color-surface-2: #dceaf6;
+    --color-foreground: #0d1f3c;
+    --color-muted: #4c5f7c;
+    --color-line: rgb(13 31 60 / 12%);
+    --color-primary: #1a65a8;
+    --color-on-primary: #fff;
+    --color-primary-strong: #0a2445;
+    --color-bib: #14306a;
+    --color-on-bib: #fff;
+    --color-amber: #9b6100;
+    --color-teal: #0d6d78;
+    --color-slate: #4d5b6e;
+    --color-pitch: #2a6aa8;
+    --color-pitch-stripe: #26619a;
+    --color-pitch-line: rgb(255 255 255 / 55%);
+    --color-pitch-ink: #fff;
+    --slot-empty-bg: rgb(255 255 255 / 8%);
+    --slot-filled-bg: #fff;
+    --slot-filled-ink: #0d1f3c;
+    --shadow-sm: 0 1px 2px rgb(13 31 60 / 7%);
+    --shadow-lg: 0 18px 48px rgb(13 31 60 / 22%);
+    --body-texture: none;
+    --body-texture-size: auto;
+
+    color-scheme: light;
+}
+
+@mixin kit-away-dark {
+    --color-background: #091326;
+    --color-surface: #101e3b;
+    --color-surface-2: #17284b;
+    --color-foreground: #e8f1fb;
+    --color-muted: #93a8c6;
+    --color-line: rgb(232 241 251 / 12%);
+    --color-primary: #6cb5f0;
+    --color-on-primary: #04122a;
+    --color-primary-strong: #020814;
+    --color-bib: #8fd0ff;
+    --color-on-bib: #04122a;
+    --color-amber: #f0b43c;
+    --color-teal: #4fc6d0;
+    --color-slate: #a5b2c6;
+    --color-pitch: #143b69;
+    --color-pitch-stripe: #12355f;
+    --color-pitch-line: rgb(255 255 255 / 30%);
+    --color-pitch-ink: #e8f1fb;
+    --slot-empty-bg: rgb(255 255 255 / 5%);
+    --slot-filled-bg: #e8f1fb;
+    --slot-filled-ink: #091326;
+    --shadow-sm: none;
+    --shadow-lg: 0 18px 48px rgb(0 0 0 / 55%);
+    --body-texture: none;
+    --body-texture-size: auto;
+
+    color-scheme: dark;
+}
+
+@mixin kit-snow {
+    --color-background: #f4f8fb;
+    --color-surface: #fff;
+    --color-surface-2: #e2ecf3;
+    --color-foreground: #0f2233;
+    --color-muted: #4f6476;
+    --color-line: rgb(15 34 51 / 12%);
+    --color-primary: #1b6a92;
+    --color-on-primary: #fff;
+    --color-primary-strong: #0b2e44;
+    --color-bib: #e0620a;
+    --color-on-bib: #1f0d00;
+    --color-amber: #9a6200;
+    --color-teal: #0e6c79;
+    --color-slate: #4d5d6b;
+    --color-pitch: #2f6e7a;
+    --color-pitch-stripe: #2b6570;
+    --color-pitch-line: rgb(255 255 255 / 60%);
+    --color-pitch-ink: #fff;
+    --slot-empty-bg: rgb(255 255 255 / 10%);
+    --slot-filled-bg: #fff;
+    --slot-filled-ink: #0f2233;
+    --shadow-sm: 0 1px 2px rgb(15 34 51 / 6%);
+    --shadow-lg: 0 18px 48px rgb(15 34 51 / 20%);
+    --body-texture: radial-gradient(rgb(27 106 146 / 7%) 1.2px, transparent 1.6px);
+    --body-texture-size: 14px 14px;
+
+    color-scheme: light;
+}
+
+// Fixed-mode kits: same specificity as the Bib & Board blocks above, and
+// later in the file, so they win whatever data-theme or the system says.
+:root[data-kit='floodlights'] {
+    @include kit-floodlights;
+}
+
+:root[data-kit='chalkboard'] {
+    @include kit-chalkboard;
+}
+
+:root[data-kit='snow'] {
+    @include kit-snow;
+}
+
+// Light + dark kits: the light palette by default, the dark one under a
+// dark system setting (unless forced light) or a forced dark appearance.
+:root[data-kit='programme'] {
+    @include kit-programme-light;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root[data-kit='programme']:not([data-theme='light']) {
+        @include kit-programme-dark;
+    }
+}
+
+:root[data-kit='programme'][data-theme='dark'] {
+    @include kit-programme-dark;
+}
+
+:root[data-kit='away'] {
+    @include kit-away-light;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root[data-kit='away']:not([data-theme='light']) {
+        @include kit-away-dark;
+    }
+}
+
+:root[data-kit='away'][data-theme='dark'] {
+    @include kit-away-dark;
 }
 
 // Stops iOS Safari / WKWebView inflating text on rotation; Safari only

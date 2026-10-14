@@ -12,7 +12,43 @@ import { Haptics, ImpactStyle, NotificationType } from '@capacitor/haptics';
 // - haptics.select()  a slot draw / reroll lands (useGame draw + reroll)
 // - haptics.success() the XI is completed on target, or a challenge is won
 // - haptics.error()   a bust / missed target at full time
-const isNative = (): boolean => Capacitor.isNativePlatform();
+//
+// The Settings page's Haptics switch turns all of them off: stored as '0'
+// under HAPTICS_STORAGE_KEY (absent or anything else = on, the default).
+export const HAPTICS_STORAGE_KEY = 'exact-xi-haptics';
+
+// Read once, then kept in step by setHapticsEnabled — every tap would
+// otherwise hit localStorage.
+let enabledCache: boolean | null = null;
+
+export function hapticsEnabled(): boolean {
+    if (enabledCache === null) {
+        try {
+            enabledCache = window.localStorage.getItem(HAPTICS_STORAGE_KEY) !== '0';
+        } catch {
+            enabledCache = true;
+        }
+    }
+
+    return enabledCache;
+}
+
+export function setHapticsEnabled(enabled: boolean): void {
+    enabledCache = enabled;
+
+    try {
+        window.localStorage.setItem(HAPTICS_STORAGE_KEY, enabled ? '1' : '0');
+    } catch {
+        // Storage blocked: the choice lasts this session.
+    }
+}
+
+// Tests only: forget the cached setting so the next read goes to storage.
+export function resetHapticsCache(): void {
+    enabledCache = null;
+}
+
+const isNative = (): boolean => Capacitor.isNativePlatform() && hapticsEnabled();
 
 export const haptics = {
     tap(): void {
