@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { gameMode } from '../composables/useGame';
 import { trackEvent } from '../utils/analytics';
 import { getFormation } from '../utils/formations';
 
@@ -21,7 +22,12 @@ let resolvedOnClient = false;
 // the ssr:false iOS app — it must try resuming FIRST: startGame() persists
 // the fresh game, which used to overwrite the saved one before onMounted
 // could read it back (losing the game and firing a spurious game_start).
-if (formation.value && state.value?.formationCode !== formation.value.code) {
+// "Different game" also covers a Daily or challenge on the same formation:
+// game state is shared between modes, so a Daily 4-3-3 left in state must
+// never show up as a Classic 4-3-3 here.
+const isClassicFor = (code: string) => state.value?.formationCode === code && !!state.value && gameMode(state.value) === 'classic';
+
+if (formation.value && !isClassicFor(formation.value.code)) {
     if (import.meta.server) {
         startGame(formation.value.code);
     } else {

@@ -1,8 +1,9 @@
 import { ref } from 'vue';
 import type { Ref } from 'vue';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useGame } from '../app/composables/useGame';
+import { nextEmptySlotIn, resetPickRouteForTests, useGame } from '../app/composables/useGame';
 import { useStats } from '../app/composables/useStats';
+import type { ClassicPickResponse } from '../shared/daily2-types';
 import type { DrawnPlayer, HintResult, RevealResult } from '../shared/types';
 
 // useGame.ts (and useStats.ts, which it calls internally) rely on Nuxt's
@@ -42,6 +43,7 @@ beforeEach(() => {
     // implementation is safe to run as-is here since it only touches
     // localStorage/dataLayer behind the same import.meta.client guard.
     vi.stubGlobal('useStats', useStats);
+    resetPickRouteForTests();
 });
 
 afterEach(() => {
@@ -51,6 +53,13 @@ afterEach(() => {
 function drawnPlayer(id: string, token = `token-${id}`): DrawnPlayer {
     return { id, name: `Player ${id}`, appearances: 100, clubs: ['Test FC'], firstSeason: 2016, lastSeason: 2023, token };
 }
+
+// A POST /api/pick reply (DAILY2_SPEC §3.4).
+function picked(goals: number, assists = 0, extra: Partial<ClassicPickResponse> = {}): ClassicPickResponse {
+    return { status: 'ok', reveal: { goals, assists }, next: null, winOdds: null, ...extra };
+}
+
+const notFound = { statusCode: 404 };
 
 describe('useGame', () => {
     it('startGame initializes a fresh, playing game for the given formation', () => {
@@ -104,10 +113,24 @@ describe('useGame', () => {
         fetchMock.mockResolvedValueOnce([drawnPlayer('a'), drawnPlayer('b'), drawnPlayer('c')]);
         await game.openSlot('gk');
 
-        fetchMock.mockResolvedValueOnce({ goals: 5, assists: 3 } satisfies RevealResult);
+        fetchMock.mockResolvedValueOnce(picked(5, 3));
         const result = await game.pickPlayer(drawnPlayer('a'));
 
         expect(result).toEqual({ goals: 5, assists: 3 });
+        expect(fetchMock).toHaveBeenLastCalledWith('/api/pick', expect.objectContaining({
+            method: 'POST',
+            body: expect.objectContaining({
+                mode: 'classic',
+                token: 'token-a',
+                group: 'GK',
+                total: 0,
+                objectiveKind: 'exact',
+                objectiveValue: 442,
+                exclude: ['a', 'b', 'c'],
+                next: { slotId: 'def-1', group: 'DEF' },
+            }),
+        }));
+        expect(fetchMock.mock.calls.at(-1)![1].body.openAfter).toHaveLength(10);
         expect(game.state.value!.total).toBe(8);
         expect(game.state.value!.status).toBe('playing');
         expect(game.state.value!.slots.find((slot) => slot.id === 'gk')!.player?.id).toBe('a');
@@ -120,7 +143,7 @@ describe('useGame', () => {
         fetchMock.mockResolvedValueOnce([drawnPlayer('a'), drawnPlayer('b'), drawnPlayer('c')]);
         await game.openSlot('gk');
 
-        fetchMock.mockResolvedValueOnce({ goals: 500, assists: 0 } satisfies RevealResult);
+        fetchMock.mockResolvedValueOnce(picked(500));
         await game.pickPlayer(drawnPlayer('a'));
 
         expect(game.state.value!.status).toBe('bust');
@@ -171,7 +194,7 @@ describe('useGame', () => {
         for (let i = 0; i < slotIds.length - 1; i += 1) {
             fetchMock.mockResolvedValueOnce([drawnPlayer(`p${i}`)]);
             await game.openSlot(slotIds[i]!);
-            fetchMock.mockResolvedValueOnce({ goals: 0, assists: 0 } satisfies RevealResult);
+            fetchMock.mockResolvedValueOnce(picked(0));
             await game.pickPlayer(drawnPlayer(`p${i}`));
         }
 
@@ -181,7 +204,7 @@ describe('useGame', () => {
 
         fetchMock.mockResolvedValueOnce([drawnPlayer('last')]);
         await game.openSlot(lastId);
-        fetchMock.mockResolvedValueOnce({ goals: 442, assists: 0 } satisfies RevealResult);
+        fetchMock.mockResolvedValueOnce(picked(442));
         await game.pickPlayer(drawnPlayer('last'));
 
         expect(game.state.value!.total).toBe(442);
@@ -345,7 +368,7 @@ describe('useGame', () => {
         game.startGame('442');
         fetchMock.mockResolvedValueOnce([drawnPlayer('a'), drawnPlayer('b'), drawnPlayer('c')]);
         await game.openSlot('gk');
-        fetchMock.mockResolvedValueOnce({ goals: 0, assists: 0 } satisfies RevealResult);
+        fetchMock.mockResolvedValueOnce(picked(0));
         await game.pickPlayer(drawnPlayer('a'));
         game.closeDialog();
 
@@ -371,7 +394,7 @@ describe('useGame', () => {
         expect(game.state.value!.ruledOutBySlot?.gk).toBeUndefined();
     });
 
-    it('pickPlayer re-signs an expired token for the same candidates and retries the reveal', async () => {
+    it('pickPlayer (old server, no /api/pick) re-signs an expired token for the same candidates and retries the reveal', async () => {
         const game = useGame();
 
         game.startGame('442');
@@ -379,6 +402,7 @@ describe('useGame', () => {
         await game.openSlot('gk');
 
         fetchMock
+            .mockRejectedValueOnce(notFound)
             .mockRejectedValueOnce({ statusCode: 410 })
             .mockResolvedValueOnce([{ id: 'a', token: 'fresh-a' }, { id: 'b', token: 'fresh-b' }, { id: 'c', token: 'fresh-c' }])
             .mockResolvedValueOnce({ goals: 2, assists: 1 } satisfies RevealResult);
@@ -391,7 +415,7 @@ describe('useGame', () => {
         expect(game.state.value!.slots.find((slot) => slot.id === 'gk')!.player?.id).toBe('a');
     });
 
-    it('pickPlayer falls back to a free fresh draw when the candidates are too old to re-sign', async () => {
+    it('pickPlayer (old server) falls back to a free fresh draw when the candidates are too old to re-sign', async () => {
         const game = useGame();
 
         game.startGame('442');
@@ -399,6 +423,7 @@ describe('useGame', () => {
         await game.openSlot('gk');
 
         fetchMock
+            .mockRejectedValueOnce(notFound)
             .mockRejectedValueOnce({ statusCode: 410 })
             .mockRejectedValueOnce({ statusCode: 410 })
             .mockResolvedValueOnce([drawnPlayer('x'), drawnPlayer('y'), drawnPlayer('z')]);
@@ -469,6 +494,70 @@ describe('useGame', () => {
         expect(JSON.parse(window.localStorage.getItem('exact-xi-game')!).game.gameId).toBe(saved.gameId);
     });
 
+    it('resumes a Classic game saved by the pre-2.0 build (no new fields) and plays on through /api/pick', async () => {
+        const game = useGame();
+
+        game.startGame('442');
+        // Strip the record back to exactly the a2613c7 GameState shape, mid-game
+        // with an open slot's stale candidates cached (old 5-minute tokens).
+        const fresh = JSON.parse(window.localStorage.getItem('exact-xi-game')!).game;
+        const old = {
+            gameId: fresh.gameId,
+            formationCode: '442',
+            target: 442,
+            slots: fresh.slots.map((slot: { id: string }) => ({ ...slot, player: null })),
+            offeredPlayerIds: ['a', 'b', 'c'],
+            rerollsLeft: 1,
+            hintsLeft: 1,
+            total: 0,
+            status: 'playing',
+            tier: null,
+            activeSlotId: null,
+            offeredPlayers: [],
+            offeredBySlot: { gk: [drawnPlayer('a', 'old-a'), drawnPlayer('b', 'old-b'), drawnPlayer('c', 'old-c')] },
+            ruledOutBySlot: {},
+            statsRecorded: false,
+        };
+
+        window.localStorage.setItem('exact-xi-game', JSON.stringify({ savedAt: Date.now(), game: old }));
+        game.state.value = null;
+
+        expect(game.resumeGame('442')).toBe(true);
+        await game.openSlot('gk');
+        expect(fetchMock).not.toHaveBeenCalledWith('/api/draw', expect.anything());
+        expect(game.state.value!.offeredPlayers.map((p) => p.id)).toEqual(['a', 'b', 'c']);
+
+        fetchMock.mockResolvedValueOnce(picked(4, 2));
+        expect(await game.pickPlayer(drawnPlayer('a', 'old-a'))).toEqual({ goals: 4, assists: 2 });
+        expect(fetchMock).toHaveBeenLastCalledWith('/api/pick', expect.objectContaining({ body: expect.objectContaining({ token: 'old-a', mode: 'classic' }) }));
+        expect(game.state.value!.total).toBe(6);
+    });
+
+    it('discards an unreadable saved game without throwing', () => {
+        const game = useGame();
+
+        window.localStorage.setItem('exact-xi-game', '{not json');
+        expect(game.resumeGame('442')).toBe(false);
+        window.localStorage.setItem('exact-xi-game', JSON.stringify({ savedAt: Date.now() }));
+        expect(game.resumeGame('442')).toBe(false);
+        window.localStorage.setItem('exact-xi-daily2', '{"date":"bad","game":{}}');
+        expect(game.resumeGame('442')).toBe(false);
+    });
+
+    it('discards a saved game too broken to render (right formation, no slots) and clears it', () => {
+        const game = useGame();
+
+        window.localStorage.setItem('exact-xi-game', JSON.stringify({ savedAt: Date.now(), game: { gameId: 'g-12345678', formationCode: '442', target: 442 } }));
+        expect(game.resumeGame('442')).toBe(false);
+        expect(window.localStorage.getItem('exact-xi-game')).toBeNull();
+
+        window.localStorage.setItem('exact-xi-game', JSON.stringify({
+            savedAt: Date.now(),
+            game: { gameId: 'g-12345678', formationCode: '442', target: 442, slots: [null], objective: null },
+        }));
+        expect(game.resumeGame('442')).toBe(false);
+    });
+
     it('does not resume a game left untouched for more than a day', () => {
         const game = useGame();
 
@@ -480,5 +569,188 @@ describe('useGame', () => {
         game.state.value = null;
 
         expect(game.resumeGame('442')).toBe(false);
+    });
+    it('draws ahead: the next slot\'s options come back with the reveal and open instantly', async () => {
+        const game = useGame();
+
+        game.startGame('442');
+        fetchMock.mockResolvedValueOnce([drawnPlayer('a'), drawnPlayer('b'), drawnPlayer('c')]);
+        await game.openSlot('gk');
+
+        fetchMock.mockResolvedValueOnce(picked(0, 0, {
+            next: { slotId: 'def-1', candidates: [drawnPlayer('d'), drawnPlayer('e'), drawnPlayer('f')] },
+            winOdds: { waysToWin: 3, totalWays: 9 },
+        }));
+        await game.pickPlayer(drawnPlayer('a'));
+
+        expect(game.state.value!.offeredBySlot?.['def-1']?.map((p) => p.id)).toEqual(['d', 'e', 'f']);
+        expect(game.state.value!.offeredPlayerIds).toEqual(['a', 'b', 'c', 'd', 'e', 'f']);
+        expect(game.winOdds.value).toEqual({ waysToWin: 3, totalWays: 9 });
+
+        fetchMock.mockClear();
+        await game.openNextSlot();
+
+        expect(fetchMock).not.toHaveBeenCalled();
+        expect(game.state.value!.activeSlotId).toBe('def-1');
+        expect(game.state.value!.offeredPlayers.map((p) => p.id)).toEqual(['d', 'e', 'f']);
+    });
+
+    it('does not ask for a prefetch when the next slot already has options', async () => {
+        const game = useGame();
+
+        game.startGame('442');
+        fetchMock.mockResolvedValueOnce([drawnPlayer('d'), drawnPlayer('e'), drawnPlayer('f')]);
+        await game.openSlot('def-1');
+        game.closeDialog();
+        fetchMock.mockResolvedValueOnce([drawnPlayer('a'), drawnPlayer('b'), drawnPlayer('c')]);
+        await game.openSlot('gk');
+
+        fetchMock.mockResolvedValueOnce(picked(1));
+        await game.pickPlayer(drawnPlayer('a'));
+
+        expect(fetchMock.mock.calls.at(-1)![1].body.next).toBeNull();
+        expect(game.state.value!.offeredBySlot?.['def-1']?.map((p) => p.id)).toEqual(['d', 'e', 'f']);
+    });
+
+    it('drops a prefetched draw once the game is over', async () => {
+        const game = useGame();
+
+        game.startGame('442');
+        fetchMock.mockResolvedValueOnce([drawnPlayer('a')]);
+        await game.openSlot('gk');
+        fetchMock.mockResolvedValueOnce(picked(500, 0, { next: { slotId: 'def-1', candidates: [drawnPlayer('d')] } }));
+        await game.pickPlayer(drawnPlayer('a'));
+
+        expect(game.state.value!.status).toBe('bust');
+        expect(game.state.value!.offeredBySlot?.['def-1']).toBeUndefined();
+
+        fetchMock.mockClear();
+        await game.openNextSlot();
+
+        expect(fetchMock).not.toHaveBeenCalled();
+        expect(game.state.value!.activeSlotId).toBeNull();
+    });
+
+    it('an expired pick gets a free fresh three for the same slot, without spending the reroll', async () => {
+        const game = useGame();
+
+        game.startGame('442');
+        fetchMock.mockResolvedValueOnce([drawnPlayer('a'), drawnPlayer('b'), drawnPlayer('c')]);
+        await game.openSlot('gk');
+
+        fetchMock.mockResolvedValueOnce({ status: 'expired', redraw: { candidates: [drawnPlayer('x'), drawnPlayer('y'), drawnPlayer('z')] } } satisfies ClassicPickResponse);
+        const result = await game.pickPlayer(drawnPlayer('a'));
+
+        expect(result).toBe('timeout');
+        expect(game.state.value!.activeSlotId).toBe('gk');
+        expect(game.state.value!.offeredPlayers.map((p) => p.id)).toEqual(['x', 'y', 'z']);
+        expect(game.state.value!.offeredBySlot?.gk?.map((p) => p.id)).toEqual(['x', 'y', 'z']);
+        expect(game.state.value!.offeredPlayerIds).toEqual(['a', 'b', 'c', 'x', 'y', 'z']);
+        expect(game.state.value!.rerollsLeft).toBe(1);
+        expect(game.state.value!.slots.find((slot) => slot.id === 'gk')!.player).toBeNull();
+    });
+
+    it('falls back to the old reveal route on a 404, and stays on it for the session', async () => {
+        const game = useGame();
+
+        game.startGame('442');
+        fetchMock.mockResolvedValueOnce([drawnPlayer('a'), drawnPlayer('b'), drawnPlayer('c')]);
+        await game.openSlot('gk');
+
+        fetchMock
+            .mockRejectedValueOnce(notFound)
+            .mockResolvedValueOnce({ goals: 4, assists: 1 } satisfies RevealResult);
+        expect(await game.pickPlayer(drawnPlayer('a'))).toEqual({ goals: 4, assists: 1 });
+        expect(fetchMock).toHaveBeenLastCalledWith('/api/reveal', expect.objectContaining({ body: { token: 'token-a', gameId: game.state.value!.gameId } }));
+        expect(game.state.value!.total).toBe(5);
+
+        game.closeDialog();
+        fetchMock.mockResolvedValueOnce([drawnPlayer('d')]);
+        await game.openSlot('def-1');
+        fetchMock.mockClear();
+        fetchMock.mockResolvedValueOnce({ goals: 1, assists: 0 } satisfies RevealResult);
+        await game.pickPlayer(drawnPlayer('d'));
+
+        expect(fetchMock.mock.calls[0]![0]).toBe('/api/reveal');
+        expect(fetchMock.mock.calls.some(([url]) => url === '/api/pick')).toBe(false);
+    });
+
+    it('falls back to the old reveal route for one pick when /api/pick rejects the combined request (400)', async () => {
+        const game = useGame();
+
+        game.startGame('442');
+        fetchMock.mockResolvedValueOnce([drawnPlayer('a'), drawnPlayer('b'), drawnPlayer('c')]);
+        await game.openSlot('gk');
+
+        fetchMock
+            .mockRejectedValueOnce({ statusCode: 400 })
+            .mockResolvedValueOnce({ goals: 2, assists: 0 } satisfies RevealResult);
+        expect(await game.pickPlayer(drawnPlayer('a'))).toEqual({ goals: 2, assists: 0 });
+        expect(fetchMock.mock.calls.map(([url]) => url)).toContain('/api/reveal');
+
+        // A 400 isn't "old server": the next pick tries /api/pick again.
+        game.closeDialog();
+        fetchMock.mockResolvedValueOnce([drawnPlayer('d')]);
+        await game.openSlot('def-1');
+        fetchMock.mockClear();
+        fetchMock.mockResolvedValueOnce(picked(1));
+        await game.pickPlayer(drawnPlayer('d'));
+
+        expect(fetchMock.mock.calls[0]![0]).toBe('/api/pick');
+    });
+
+    it('nextEmptySlotId walks formation order after a slot, wrapping, skipping filled and locked slots', () => {
+        const game = useGame();
+
+        game.startGame('442');
+        const slots = game.state.value!.slots;
+
+        expect(game.nextEmptySlotId()).toBe('gk');
+        expect(game.nextEmptySlotId('gk')).toBe('def-1');
+        slots.find((slot) => slot.id === 'def-1')!.player = { id: 'x' } as never;
+        slots.find((slot) => slot.id === 'def-2')!.preset = true;
+        expect(game.nextEmptySlotId('gk')).toBe('def-3');
+        expect(game.nextEmptySlotId('fwd-2')).toBe('gk');
+
+        for (const slot of slots) {
+            if (slot.id !== 'mid-1') {
+                slot.player = { id: slot.id } as never;
+            }
+        }
+
+        expect(game.nextEmptySlotId('mid-1')).toBeNull();
+        expect(nextEmptySlotIn({ slots }, 'fwd-1')).toBe('mid-1');
+    });
+
+    it('replaySameFormation starts a fresh Classic game on the same formation', () => {
+        const game = useGame();
+
+        game.startGame('352');
+        const firstId = game.state.value!.gameId;
+
+        game.state.value!.status = 'bust';
+        game.replaySameFormation();
+
+        expect(game.state.value!.formationCode).toBe('352');
+        expect(game.state.value!.status).toBe('playing');
+        expect(game.state.value!.gameId).not.toBe(firstId);
+    });
+
+    it('remembers the last formation started, in state and storage', () => {
+        const game = useGame();
+
+        expect(game.lastFormation.value).toBeNull();
+        game.startGame('541');
+
+        expect(game.lastFormation.value).toBe('541');
+        expect(window.localStorage.getItem('exact-xi-last-formation')).toBe('541');
+
+        game.lastFormation.value = null;
+        game.loadLastFormation();
+        expect(game.lastFormation.value).toBe('541');
+
+        window.localStorage.setItem('exact-xi-last-formation', 'nonsense');
+        game.loadLastFormation();
+        expect(game.lastFormation.value).toBeNull();
     });
 });

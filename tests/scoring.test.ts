@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { calculateTotal, getDistance, getGameResult, isBust, isExactWin, tierForDistance } from '../app/utils/scoring';
+import { calculateTotal, getDistance, getGameResult, getTierBoundaries, isBetterOutcome, isBust, isExactWin, TIER_BOUNDARIES, tierForDistance } from '../app/utils/scoring';
 
 describe('calculateTotal', () => {
     it('sums goals and assists across every picked player', () => {
@@ -42,19 +42,18 @@ describe('getDistance', () => {
     });
 });
 
-// Boundaries chosen empirically from scripts/simulate.ts's distance
-// distribution, then tightened (see the comment in scoring.ts for the full
-// rationale): championsLeague <= 25, europaLeague <= 75, midTable <= 150,
-// avoidedRelegation <= 300, relegated otherwise.
+// DAILY2_SPEC §1.8's retuned ladder: titleWinners 1..W (with a target),
+// championsLeague ..30, europaLeague ..75, midTable ..150,
+// avoidedRelegation ..250, relegated otherwise.
 describe('tierForDistance', () => {
-    it('is championsLeague at and just under its boundary', () => {
+    it('is championsLeague at and just under its boundary without a target (no Title window)', () => {
         expect(tierForDistance(0)).toBe('championsLeague');
         expect(tierForDistance(1)).toBe('championsLeague');
-        expect(tierForDistance(25)).toBe('championsLeague');
+        expect(tierForDistance(30)).toBe('championsLeague');
     });
 
     it('crosses from championsLeague to europaLeague at the boundary', () => {
-        expect(tierForDistance(26)).toBe('europaLeague');
+        expect(tierForDistance(31)).toBe('europaLeague');
         expect(tierForDistance(75)).toBe('europaLeague');
     });
 
@@ -65,15 +64,43 @@ describe('tierForDistance', () => {
 
     it('crosses from midTable to avoidedRelegation at the boundary', () => {
         expect(tierForDistance(151)).toBe('avoidedRelegation');
-        expect(tierForDistance(300)).toBe('avoidedRelegation');
+        expect(tierForDistance(250)).toBe('avoidedRelegation');
     });
 
     it('crosses from avoidedRelegation to relegated at the boundary', () => {
-        expect(tierForDistance(301)).toBe('relegated');
+        expect(tierForDistance(251)).toBe('relegated');
     });
 
     it('stays relegated arbitrarily far out', () => {
         expect(tierForDistance(1000)).toBe('relegated');
+    });
+
+    it('adds the Title winners window with a target, sized by formation', () => {
+        const windows: Record<string, number> = { 343: 5, 352: 5, 433: 6, 442: 7, 451: 7, 532: 8, 541: 8 };
+
+        for (const [code, w] of Object.entries(windows)) {
+            const target = Number(code);
+
+            expect(getTierBoundaries(target)[0]).toEqual({ tier: 'titleWinners', maxDistance: w });
+            expect(tierForDistance(1, target)).toBe('titleWinners');
+            expect(tierForDistance(w, target)).toBe('titleWinners');
+            expect(tierForDistance(w + 1, target)).toBe('championsLeague');
+        }
+    });
+
+    it('keeps TIER_BOUNDARIES (no Title row) with the new numbers', () => {
+        expect(TIER_BOUNDARIES.map((b) => [b.tier, b.maxDistance])).toEqual([
+            ['championsLeague', 30], ['europaLeague', 75], ['midTable', 150], ['avoidedRelegation', 250], ['relegated', Infinity],
+        ]);
+    });
+});
+
+describe('isBetterOutcome', () => {
+    it('ranks Title winners between Champions League and an exact win', () => {
+        expect(isBetterOutcome('titleWinners', 'championsLeague')).toBe(true);
+        expect(isBetterOutcome('champion', 'titleWinners')).toBe(true);
+        expect(isBetterOutcome('championsLeague', 'titleWinners')).toBe(false);
+        expect(isBetterOutcome('titleWinners', null)).toBe(true);
     });
 });
 
@@ -91,9 +118,14 @@ describe('getGameResult', () => {
         expect(getGameResult(442, 442, 11, 11)).toEqual({ status: 'won', tier: null });
     });
 
-    it('is finished with the championsLeague tier just short of exact', () => {
-        expect(getGameResult(441, 442, 11, 11)).toEqual({ status: 'finished', tier: 'championsLeague' });
-        expect(getGameResult(417, 442, 11, 11)).toEqual({ status: 'finished', tier: 'championsLeague' });
+    it('is finished with the titleWinners tier within the window of 442 (7)', () => {
+        expect(getGameResult(441, 442, 11, 11)).toEqual({ status: 'finished', tier: 'titleWinners' });
+        expect(getGameResult(435, 442, 11, 11)).toEqual({ status: 'finished', tier: 'titleWinners' });
+    });
+
+    it('is finished with the championsLeague tier just outside the Title window', () => {
+        expect(getGameResult(434, 442, 11, 11)).toEqual({ status: 'finished', tier: 'championsLeague' });
+        expect(getGameResult(412, 442, 11, 11)).toEqual({ status: 'finished', tier: 'championsLeague' });
     });
 
     it('is finished with the europaLeague tier a bit further out', () => {

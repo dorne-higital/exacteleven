@@ -1,9 +1,6 @@
-import type { DrawnPlayer, ObjectiveKind, Player, PositionGroup } from '../../shared/types';
-import { signPlayerToken } from '../utils/draw-token';
-import { CANDIDATES_PER_DRAW } from '../utils/game-constants';
+import type { DrawnPlayer, ObjectiveKind, PositionGroup } from '../../shared/types';
+import { drawClassicCandidates, toDrawnPlayers } from '../utils/classic-draw';
 import { parseExclude } from '../utils/parse-exclude';
-import { getPlayersByPosition } from '../utils/players';
-import { buildViabilityCheck } from '../utils/win-odds';
 
 const VALID_POSITIONS = new Set(['GK', 'DEF', 'MID', 'FWD']);
 const VALID_OBJECTIVE_KINDS = new Set(['exact', 'over', 'under', 'allUnder']);
@@ -12,49 +9,9 @@ const GAME_ID_PATTERN = /^[\w-]{8,64}$/;
 // ceiling) — a generous cap against a malformed/hostile query, not a tight fit.
 const MAX_OTHER_REMAINING = 10;
 
-// Random sample without replacement — fine for a pool of a few hundred
-// players; no need for anything fancier here.
-function sampleWithoutReplacement<T>(items: T[], count: number): T[] {
-    const pool = [...items];
-    const picked: T[] = [];
-
-    while (pool.length > 0 && picked.length < count) {
-        const index = Math.floor(Math.random() * pool.length);
-        const [item] = pool.splice(index, 1);
-
-        if (item !== undefined) {
-            picked.push(item);
-        }
-    }
-
-    return picked;
-}
-
-// At least one of the 3 candidates offered should keep the game genuinely
-// winnable when the pool allows it — otherwise a run of bad luck alone could
-// make a slot's draw a dead end regardless of skill, and the Hint feature
-// would sometimes be ruling out one of 3 losing options, leaving no actual
-// path to winning either way. `viable` is a subset of the whole eligible pool
-// (already computed by the caller); the other 2 slots stay plain random, and
-// the 3 are shuffled together so the guaranteed pick doesn't always land in
-// the same offered position.
-function drawWithViabilityBias(eligible: Player[], viable: Player[], count: number): Player[] {
-    if (viable.length === 0) {
-        return sampleWithoutReplacement(eligible, count);
-    }
-
-    const guaranteed = viable[Math.floor(Math.random() * viable.length)]!;
-    const rest = eligible.filter((player) => player.id !== guaranteed.id);
-    const combined = [guaranteed, ...sampleWithoutReplacement(rest, count - 1)];
-
-    for (let i = combined.length - 1; i > 0; i -= 1) {
-        const j = Math.floor(Math.random() * (i + 1));
-
-        [combined[i], combined[j]] = [combined[j]!, combined[i]!];
-    }
-
-    return combined;
-}
+// The draw itself (random sample, the "at least one option keeps a win
+// possible" bias, and the exact-objective final-slot rule) lives in
+// server/utils/classic-draw.ts, shared with POST /api/pick.
 
 // Optional viability-bias inputs — absent or malformed just means "skip the
 // bias, draw plain random" rather than a hard failure, so an older client
@@ -107,37 +64,21 @@ export default defineEventHandler(async (event): Promise<DrawnPlayer[]> => {
     }
 
     const exclude = parseExclude(query.exclude);
-    const eligible = getPlayersByPosition(position as PositionGroup).filter((player) => !exclude.has(player.id));
-
     const otherRemaining = tryParseOtherRemaining(query.remaining);
     const objectiveKind = tryParseObjectiveKind(query.objectiveKind);
     const objectiveValue = tryParseNonNegativeNumber(query.objectiveValue);
     const runningTotal = tryParseNonNegativeNumber(query.total);
 
-    let chosen: Player[];
+    const hasBias = otherRemaining !== null && objectiveKind !== null && objectiveValue !== null && runningTotal !== null;
+    const chosen = drawClassicCandidates({
+        group: position as PositionGroup,
+        excludeIds: exclude,
+        bias: hasBias ? { otherRemaining, objectiveKind, objectiveValue, runningTotal } : null,
+    });
 
-    if (otherRemaining !== null && objectiveKind !== null && objectiveValue !== null && runningTotal !== null) {
-        const otherPools = otherRemaining.map((group) => (
-            getPlayersByPosition(group).filter((player) => !exclude.has(player.id))
-        ));
-        const isViable = buildViabilityCheck(otherPools, objectiveKind, objectiveValue, runningTotal);
-        const viable = eligible.filter((player) => isViable(player.goals + player.assists));
-
-        chosen = drawWithViabilityBias(eligible, viable, CANDIDATES_PER_DRAW);
-    } else {
-        chosen = sampleWithoutReplacement(eligible, CANDIDATES_PER_DRAW);
-    }
-
-    const secret = useRuntimeConfig().drawTokenSecret;
+    // Optional, additive: long=1 (the app) signs 30-minute tokens instead of 5.
+    const long = query.long === '1' || query.long === 'true' || query.long === true;
 
     // Never include goals/assists here (D2) — only what's needed to render a choice.
-    return Promise.all(chosen.map(async (player) => ({
-        id: player.id,
-        name: player.name,
-        clubs: player.clubs,
-        firstSeason: player.firstSeason,
-        lastSeason: player.lastSeason,
-        appearances: player.appearances,
-        token: await signPlayerToken(player.id, gameId, secret),
-    })));
+    return toDrawnPlayers(chosen, gameId, useRuntimeConfig().drawTokenSecret, long);
 });

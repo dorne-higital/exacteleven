@@ -1,4 +1,5 @@
-import type { FormationCode } from '../../shared/types';
+import type { DailyStat } from '../../shared/daily2-types';
+import type { FormationCode, ObjectiveKind } from '../../shared/types';
 import type { Outcome } from './scoring';
 
 // Split out of useStats.ts so these types can be imported by plain-TS
@@ -16,6 +17,20 @@ export interface DailyResultEntry {
     /** YYYY-MM-DD, matching GameStats.lastDailyResultDate's format. */
     date: string;
     status: 'won' | 'bust' | 'lost';
+    /** Daily 2.0 only: the score out of 1,000 (absent on v1 results). */
+    score?: number;
+}
+
+// One ranked Daily 2.0 result — the Stats dialog's "recent scores" and the
+// Sunday recap's fallback when offline. Capped at the last 14.
+export interface DailyScoreEntry {
+    date: string;
+    score: number;
+    status: 'won' | 'bust' | 'lost';
+    kind: ObjectiveKind;
+    stat: DailyStat;
+    beatPct: number | null;
+    players: number;
 }
 
 export interface GameStats {
@@ -26,6 +41,8 @@ export interface GameStats {
     midTable: number;
     avoidedRelegation: number;
     relegated: number;
+    /** Classic finishes within the Title winners window (1..titleWindowFor(target) off). */
+    titleWinners: number;
     busts: number;
     /** The best outcome ever reached (bust doesn't count — it isn't part of the ranked ladder), and which formation it happened on. */
     bestResult: BestResult | null;
@@ -33,10 +50,26 @@ export interface GameStats {
     formationPlays: Record<FormationCode, number>;
     /** How many EXACT wins landed on each formation — a subset of formationPlays, feeds the per-formation achievements in utils/achievements.ts. */
     formationWins: Record<FormationCode, number>;
-    /** Current consecutive-day Daily Challenge win streak — NOT used by achievements directly (it can go back to 0), see bestDailyStreak. */
+    /**
+     * Consecutive UK days with a finished first Daily attempt (won, lost or
+     * bust) — the PLAYED streak since statsVersion 2 (it used to count wins,
+     * see dailyWinStreak). Stored value only resets on the next record; read
+     * it through currentDailyStreak() to show 0 once a day was missed.
+     * Not used by achievements directly, see bestDailyStreak.
+     */
     dailyStreak: number;
-    /** The highest dailyStreak ever reached — monotonic, so achievements read this instead of the live streak (a badge must never re-lock). */
+    /** The highest dailyStreak ever reached — monotonic, so achievements and Game Center read this instead of the live streak (a badge must never re-lock). */
     bestDailyStreak: number;
+    /** Consecutive Daily days WON (what dailyStreak meant before statsVersion 2). */
+    dailyWinStreak: number;
+    /** The highest dailyWinStreak ever reached — monotonic. */
+    bestDailyWinStreak: number;
+    /** Best Daily 2.0 score out of 1,000 (0 = none yet). */
+    bestDailyScore: number;
+    /** The most recent Daily 2.0 scores, oldest first, capped at 14. */
+    dailyScores: DailyScoreEntry[];
+    /** 2 once the played-streak migration has run (DAILY2_SPEC §1.9). */
+    statsVersion: number;
     dailyWins: number;
     dailyPlays: number;
     /** The YYYY-MM-DD of the last completed Daily Challenge attempt — used both to detect a consecutive-day streak and to guard against a same-day replay (e.g. via "Play again") padding the stats twice. */

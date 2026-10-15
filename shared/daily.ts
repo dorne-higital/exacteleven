@@ -51,7 +51,7 @@ export function dayIndexForDate(date: string): number {
 }
 
 // FNV-1a hash, deterministic and dependency-free.
-function hashSeed(text: string): number {
+export function hashSeed(text: string): number {
     let hash = 0x811c9dc5;
 
     for (let i = 0; i < text.length; i += 1) {
@@ -63,7 +63,7 @@ function hashSeed(text: string): number {
 }
 
 // mulberry32 — small, fast, deterministic PRNG seeded from a 32-bit int.
-function mulberry32(seed: number): () => number {
+export function mulberry32(seed: number): () => number {
     let state = seed;
 
     return () => {
@@ -83,7 +83,7 @@ export function seededInt(seedText: string, max: number): number {
 
 // A deterministic shuffle (Fisher-Yates driven by the seeded PRNG) — used to
 // pick which slots are pre-filled without biasing toward any one position.
-function seededShuffle<T>(items: T[], seedText: string): T[] {
+export function seededShuffle<T>(items: T[], seedText: string): T[] {
     const rng = mulberry32(hashSeed(seedText));
     const result = [...items];
 

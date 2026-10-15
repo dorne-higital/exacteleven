@@ -128,6 +128,9 @@ describe('GET /api/app-config', () => {
             serverTime: '2026-10-13T23:30:00.000Z',
             dailyDate: '2026-10-13',
             storeUrl: 'https://apps.apple.com/app/id1',
+            // Daily 2.0 (additive): 23:30 UTC is 00:30 BST, so the UK is already on the 14th.
+            ukDate: '2026-10-14',
+            nextDailyAt: '2026-10-14T23:00:00.000Z',
         });
         expect(headers['cache-control']).toBe('no-store');
     });

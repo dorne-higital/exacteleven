@@ -1,3 +1,5 @@
+import type { ClueBand, DailyMove, DailyPuzzle, DailySnapshot, DailyStat, DailySubmitResponse, PuzzleOption } from './daily2-types';
+
 export type PositionGroup = 'GK' | 'DEF' | 'MID' | 'FWD';
 
 export interface Player {
@@ -43,6 +45,8 @@ export interface Objective {
     kind: ObjectiveKind;
     value: number;
     label: string;
+    /** Daily 2.0 only: which stat counts (goals-only / assists-only days). Absent = goals + assists, as every pre-2.0 objective. */
+    stat?: DailyStat;
 }
 
 export interface Formation {
@@ -62,7 +66,10 @@ export type GameStatus = 'playing' | 'won' | 'bust' | 'finished' | 'lost';
 // The league-table ladder a non-exact, non-bust finish lands on, worst to
 // best read top-down in the UI (best first here): only set when
 // `status === 'finished'`. Boundaries are tuned empirically in scoring.ts.
-export type ResultTier = 'championsLeague' | 'europaLeague' | 'midTable' | 'avoidedRelegation' | 'relegated';
+// 'titleWinners' (Daily 2.0 build) is the near-miss band just under the
+// target — within titleWindowFor(target) (shared/classic.ts) — so a game
+// that misses the exact jackpot by a hair still lands on a top tier.
+export type ResultTier = 'titleWinners' | 'championsLeague' | 'europaLeague' | 'midTable' | 'avoidedRelegation' | 'relegated';
 
 export interface GameSlot extends Slot {
     player: Player | null;
@@ -156,4 +163,31 @@ export interface GameState {
     boostsSpent?: number;
     /** App only: whether Pro's extra free Classic reroll has been used this game. Optional, as above (= false). */
     proRerollUsed?: boolean;
+    /** Set only for a Daily 2.0 (fixed-option) game — the run's puzzle, move log and server snapshot. Optional: every other game (and every game persisted before 2.0) doesn't have it. */
+    daily2?: DailyRunState;
+}
+
+// A Daily 2.0 run, kept on GameState.daily2. The move log is the source of
+// truth: the server replays it (shared/daily2-rules.ts's replayDaily) on
+// every pick/action/submit, so nothing else here needs to be trusted.
+export interface DailyRunState {
+    v: 2;
+    /** Kept so resume/redisplay works offline. */
+    puzzle: DailyPuzzle;
+    /** === GameState.gameId */
+    runId: string;
+    installId: string;
+    /** null until /start (or submit) answers. */
+    ranked: boolean | null;
+    archive: boolean;
+    moves: DailyMove[];
+    /** Revealed players only (picks, sub). */
+    values: Record<string, { goals: number; assists: number }>;
+    rerollOptions?: { slotId: string; options: PuzzleOption[] };
+    clue?: { slotId: string; playerId: string; band: ClueBand };
+    /** Once benched. */
+    sub?: Player;
+    /** Last server snapshot. */
+    snapshot: DailySnapshot;
+    submit: { state: 'idle' | 'pending' | 'done' | 'failed'; result?: DailySubmitResponse };
 }

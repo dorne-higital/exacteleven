@@ -8,7 +8,13 @@ const props = defineProps<{
     status: GameStatus;
     /** Set only for a Daily Challenge — swaps the "Target" label/progress-bar semantics for the day's rotating objective. */
     objective?: Objective;
+    /** Daily 2.0: what the game would score if it ended now (out of 1,000). null/absent hides it. */
+    projected?: number | null;
+    /** Daily 2.0: the objective is already shown above the bar, so label the number by kind ("Target", "Beat", "Under", "Each under") instead of repeating it. */
+    compact?: boolean;
 }>();
+
+const COMPACT_LABEL = { exact: 'Target', over: 'Beat', under: 'Under', allUnder: 'Each under' } as const;
 
 // Every objective kind except 'allUnder' still boils down to "compare the
 // running total against one number" — allUnder's win condition is per-player
@@ -23,8 +29,14 @@ const progress = computed(() => (
     showProgressBar.value && objectiveValue.value > 0 ? Math.min(100, (props.total / objectiveValue.value) * 100) : 0
 ));
 
-const targetLabel = computed(() => (props.objective ? props.objective.label : 'Target'));
-const targetValue = computed(() => (props.objective && props.objective.kind !== 'exact' ? null : objectiveValue.value));
+const targetLabel = computed(() => {
+    if (props.objective && props.compact) {
+        return COMPACT_LABEL[props.objective.kind];
+    }
+
+    return props.objective ? props.objective.label : 'Target';
+});
+const targetValue = computed(() => (props.objective && props.objective.kind !== 'exact' && !props.compact ? null : objectiveValue.value));
 
 // "Remaining" implies more picks are still possible — once the game has
 // ended (win, bust, or finished), the same count is unfilled slots, not
@@ -51,6 +63,9 @@ const remainingLabel = computed(() => (props.status === 'playing' ? 'Remaining' 
             <div class="score-bar__item">
                 <span class="score-bar__label">Total</span>
                 <span class="score-bar__value">{{ total }}</span>
+                <span v-if="projected !== null && projected !== undefined" class="score-bar__projected">
+                    Projected <b>{{ projected }}</b>
+                </span>
             </div>
 
             <div class="score-bar__item">
@@ -139,6 +154,19 @@ const remainingLabel = computed(() => (props.status === 'playing' ? 'Remaining' 
     font-variant-numeric: tabular-nums;
     font-weight: 900;
     line-height: 1;
+}
+
+.score-bar__projected {
+    color: var(--color-muted);
+    font-size: 0.68rem;
+    font-weight: 600;
+    white-space: nowrap;
+
+    b {
+        color: var(--color-foreground);
+        font-family: var(--font-mono);
+        font-variant-numeric: tabular-nums;
+    }
 }
 
 .score-bar__value--target {

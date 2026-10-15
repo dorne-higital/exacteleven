@@ -14,6 +14,19 @@ export interface ShareCardSpec {
      * red (the exact-hit moment), 'bust' slate. Omitted = the plain white bib.
      */
     tone?: 'win' | 'bust';
+    /**
+     * Daily 2.0: the share grid, drawn on the board in place of the big
+     * number — rows from attack (top) to keeper (bottom), one square per
+     * player coloured by how much the pick helped. No names.
+     */
+    grid?: ShareCardCell[][];
+}
+
+export type ShareCardLevel = 'best' | 'good' | 'poor' | 'bust' | 'locked' | 'empty';
+
+export interface ShareCardCell {
+    level: ShareCardLevel;
+    captain?: boolean;
 }
 
 function readCssVar(name: string, fallback: string): string {
@@ -35,6 +48,8 @@ function readTheme() {
         bib: readCssVar('--color-bib', '#da291c'),
         onBib: readCssVar('--color-on-bib', '#ffffff'),
         bust: readCssVar('--color-bust', '#4f5d66'),
+        amber: readCssVar('--color-amber', '#b87900'),
+        teal: readCssVar('--color-teal', '#0f7480'),
         pitch: readCssVar('--color-pitch', '#13865c'),
         pitchStripe: readCssVar('--color-pitch-stripe', '#0f7a53'),
         pitchLine: readCssVar('--color-pitch-line', 'rgb(255 255 255 / 55%)'),
@@ -118,6 +133,20 @@ function drawBoard(
     ctx.strokeRect(centreX - 90, y + height - inset - 70, 180, 70);
     ctx.restore();
 
+    if (spec.grid && spec.grid.length > 0) {
+        drawGrid(ctx, theme, spec.grid, { x, y, width, height });
+
+        ctx.fillStyle = theme.pitchInk;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font = `700 26px ${theme.bodyFont}`;
+        ctx.fillText(spec.highlight.label.toUpperCase(), centreX, y + height - 52);
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'alphabetic';
+
+        return;
+    }
+
     const chipRadius = 112;
     const chipFill = spec.tone === 'win' ? theme.bib : spec.tone === 'bust' ? theme.bust : theme.slotBg;
     const chipInk = spec.tone === 'win' ? theme.onBib : spec.tone === 'bust' ? theme.background : theme.slotInk;
@@ -142,6 +171,63 @@ function drawBoard(
 
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
+}
+
+// The Daily share grid on the board: the same colours as the emoji text
+// share (🟥 best = bib, 🟧 good = amber, ⬜ poor = white bib, ⬛ bust =
+// slate, 🟦 locked = teal, empty = an outline), with a small "C" on the
+// captain's square.
+function drawGrid(
+    ctx: CanvasRenderingContext2D,
+    theme: ReturnType<typeof readTheme>,
+    rows: ShareCardCell[][],
+    box: { x: number; y: number; width: number; height: number },
+): void {
+    const fills: Record<ShareCardLevel, string | null> = {
+        best: theme.bib,
+        good: theme.amber,
+        poor: theme.slotBg,
+        bust: theme.bust,
+        locked: theme.teal,
+        empty: null,
+    };
+    const size = 54;
+    const gap = 14;
+    const top = box.y + 70;
+    const usable = box.height - 190;
+    const step = rows.length > 1 ? usable / (rows.length - 1) : 0;
+
+    rows.forEach((row, rowIndex) => {
+        const rowWidth = row.length * size + (row.length - 1) * gap;
+        const startX = box.x + (box.width - rowWidth) / 2;
+        const rowY = top + rowIndex * step;
+
+        row.forEach((cell, cellIndex) => {
+            const cellX = startX + cellIndex * (size + gap);
+            const fill = fills[cell.level];
+
+            roundedRectPath(ctx, cellX, rowY, size, size, 10);
+
+            if (fill) {
+                ctx.fillStyle = fill;
+                ctx.fill();
+            } else {
+                ctx.strokeStyle = theme.pitchLine;
+                ctx.lineWidth = 3;
+                ctx.stroke();
+            }
+
+            if (cell.captain) {
+                ctx.fillStyle = cell.level === 'best' ? theme.onBib : theme.slotInk;
+                ctx.font = `900 30px ${theme.displayFont}`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('C', cellX + size / 2, rowY + size / 2 + 2);
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'alphabetic';
+            }
+        });
+    });
 }
 
 export async function buildShareCardBlob(spec: ShareCardSpec): Promise<Blob | null> {

@@ -47,10 +47,11 @@ usePageSeoMeta({
                 <ul>
                     <li>your stats — games played, wins, results, your Daily Challenge streak and recent Daily results;</li>
                     <li>which achievements you've already been shown;</li>
-                    <li>the game you're in the middle of, so a refresh or a closed app doesn't lose it (cleared after a day of no play).</li>
+                    <li>the game you're in the middle of, so a refresh or a closed app doesn't lose it (cleared after a day of no play);</li>
+                    <li>a random ID for this device, used only for the Daily (see below).</li>
                 </ul>
                 <p>
-                    None of this is sent to us. Clearing your browser's site data (or deleting the app) removes it, and it
+                    Apart from that Daily ID and score, none of this is sent to us. Clearing your browser's site data (or deleting the app) removes it, and it
                     doesn't move between devices.
                 </p>
             </section>
@@ -62,6 +63,9 @@ usePageSeoMeta({
                     (positions, the players offered, your running total) — nothing that identifies you. Like any website,
                     our host (Netlify) briefly processes your IP address to deliver the site and to stop abuse, such as
                     limiting how many requests one address can make in a few minutes.
+                </p>
+                <p>
+                    The Daily sends an anonymous random ID and your score so we can show how you compare. No name, no account.
                 </p>
             </section>
 

@@ -2,12 +2,16 @@
 import type { DailyResultEntry } from '../utils/stats-types';
 
 const props = withDefaults(defineProps<{
+    /** Days PLAYED in a row (any finished first attempt), since stats v2. */
     streak: number;
+    /** Daily wins in a row, shown beside the played streak when given. */
+    winStreak?: number | null;
     results: DailyResultEntry[];
     /** Homepage teaser: streak count only, no result chips — and renders nothing at all until there's a streak to show. */
     compact?: boolean;
 }>(), {
     compact: false,
+    winStreak: null,
 });
 
 const RESULT_CHIP_LIMIT = 10;
@@ -21,7 +25,7 @@ const CHIP_LETTER: Record<DailyResultEntry['status'], string> = { won: 'W', bust
 function chipLabel(entry: DailyResultEntry): string {
     const status = entry.status === 'won' ? 'Won' : entry.status === 'bust' ? 'Bust' : 'Lost';
 
-    return `${entry.date}: ${status}`;
+    return typeof entry.score === 'number' ? `${entry.date}: ${status}, ${entry.score} points` : `${entry.date}: ${status}`;
 }
 </script>
 
@@ -30,7 +34,10 @@ function chipLabel(entry: DailyResultEntry): string {
         <div class="daily-streak__header">
             <AppIcon class="daily-streak__flame" name="flame" />
             <span class="daily-streak__count">{{ streak }}</span>
-            <span class="daily-streak__label">day streak</span>
+            <span class="daily-streak__label">{{ streak === 1 ? 'day played' : 'days played in a row' }}</span>
+            <span v-if="winStreak !== null" class="daily-streak__wins">
+                <b>{{ winStreak }}</b> {{ winStreak === 1 ? 'win' : 'wins' }} in a row
+            </span>
         </div>
 
         <div v-if="recentResults.length > 0" class="daily-streak__results" role="list">
@@ -46,7 +53,7 @@ function chipLabel(entry: DailyResultEntry): string {
                 <span class="daily-streak__sr">{{ chipLabel(entry) }}</span>
             </span>
         </div>
-        <p v-else class="daily-streak__empty">Play today's challenge to start your streak.</p>
+        <p v-else class="daily-streak__empty">Play today's Daily to start your streak.</p>
     </div>
 
     <span v-else-if="streak > 0" class="daily-streak-badge">
@@ -69,7 +76,23 @@ function chipLabel(entry: DailyResultEntry): string {
 .daily-streak__header {
     align-items: center;
     display: flex;
+    flex-wrap: wrap;
     gap: 0.35rem;
+    justify-content: center;
+}
+
+.daily-streak__wins {
+    border-left: 1px solid var(--color-line);
+    color: var(--color-muted);
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin-left: 0.25rem;
+    padding-left: 0.6rem;
+
+    b {
+        color: var(--color-foreground);
+        font-family: var(--font-mono);
+    }
 }
 
 .daily-streak__flame {

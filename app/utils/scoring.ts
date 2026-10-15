@@ -1,3 +1,4 @@
+import { titleWindowFor } from '#shared/classic';
 import type { GameStatus, ResultTier } from '../../shared/types';
 
 export function calculateTotal(pickedPlayers: Array<{ goals: number; assists: number }>): number {
@@ -19,35 +20,41 @@ export function getDistance(total: number, target: number): number {
 
 // League-table ladder for a non-bust, non-exact finish — worst to best is
 // Relegated < Avoided relegation < Mid-table < Europa League < Champions
-// League < Win (exact only, handled separately in getGameResult).
+// League < Title winners < Win (exact only, handled separately in
+// getGameResult).
 //
-// Boundaries chosen empirically from scripts/simulate.ts's distance
-// distribution across all 7 formations x both strategies (65,046 finished
-// games): min=1 p10=34 p25=85 p40=138 median=173 p60=210 p75=271 p90=351
-// p95=396 max=508. Distances run much larger than the old WIN_TOLERANCE
-// (±20) because the win condition is exact-only now — "finished" covers the
-// entire rest of the outcome space, not just a narrow near-miss band.
+// Retuned in DAILY2_SPEC §1.8 with scripts/simulate.ts modelling the live
+// draw bias and the fairer final slot (the old boundaries came from a sim
+// that modelled neither). Shares of all games, "fan" model: exact 8.2%,
+// Title 15.1%, CL 4.5%, EL 12.7%, Mid 24.2%, AR 23.9%, Relegated 10.1%,
+// bust 1.3%.
+//   titleWinners      1..W     W = titleWindowFor(target), 5-8 by formation —
+//                              "so close it hurts", a reachable top tier
+//   championsLeague   W+1..30
+//   europaLeague      ..75
+//   midTable          ..150
+//   avoidedRelegation ..250   (was ..300)
+//   relegated         otherwise
 //
-// Mapped onto that real distribution, then tightened below the raw
-// percentiles (rounded to clean numbers) so the top tiers stay a genuine
-// reach rather than a near-default outcome:
-//   championsLeague  <= 25   (< p10)  — a genuine near-miss
-//   europaLeague     <= 75   (< p25)  — next band
-//   midTable         <= 150  (< p40)  — next band; still the most common
-//                                       "unremarkable middling finish"
-//   avoidedRelegation <= 300 (< p90)  — next band
-//   relegated       otherwise         — the worst ~10%, reserved for finishes
-//                                       further out than 90% of all finishes
+// TIER_BOUNDARIES has no Title row because its window depends on the target
+// — getTierBoundaries(target) is the full ladder.
 export const TIER_BOUNDARIES: ReadonlyArray<{ tier: ResultTier; maxDistance: number }> = [
-    { tier: 'championsLeague', maxDistance: 25 },
+    { tier: 'championsLeague', maxDistance: 30 },
     { tier: 'europaLeague', maxDistance: 75 },
     { tier: 'midTable', maxDistance: 150 },
-    { tier: 'avoidedRelegation', maxDistance: 300 },
+    { tier: 'avoidedRelegation', maxDistance: 250 },
     { tier: 'relegated', maxDistance: Infinity },
 ];
 
-export function tierForDistance(distance: number): ResultTier {
-    const match = TIER_BOUNDARIES.find((boundary) => distance <= boundary.maxDistance);
+// The full ladder for one target, Title winners first.
+export function getTierBoundaries(target: number): ReadonlyArray<{ tier: ResultTier; maxDistance: number }> {
+    return [{ tier: 'titleWinners', maxDistance: titleWindowFor(target) }, ...TIER_BOUNDARIES];
+}
+
+// Without `target` there's no Title window (old callers keep the 5-tier ladder).
+export function tierForDistance(distance: number, target?: number): ResultTier {
+    const ladder = target === undefined ? TIER_BOUNDARIES : getTierBoundaries(target);
+    const match = ladder.find((boundary) => distance <= boundary.maxDistance);
 
     // Unreachable — the last boundary is Infinity — but keeps the return
     // type non-optional without a non-null assertion.
@@ -56,11 +63,11 @@ export function tierForDistance(distance: number): ResultTier {
 
 // The full ranked ladder including the win case, worst to best — used by the
 // stats feature's "best result ever" tracking (bust isn't part of this
-// ladder, same as it isn't one of the 5 finished tiers).
+// ladder, same as it isn't one of the finished tiers).
 export type Outcome = ResultTier | 'champion';
 
-const OUTCOME_ORDER: readonly Outcome[] = [
-    'relegated', 'avoidedRelegation', 'midTable', 'europaLeague', 'championsLeague', 'champion',
+export const OUTCOME_ORDER: readonly Outcome[] = [
+    'relegated', 'avoidedRelegation', 'midTable', 'europaLeague', 'championsLeague', 'titleWinners', 'champion',
 ];
 
 function outcomeRank(outcome: Outcome): number {
@@ -95,5 +102,5 @@ export function getGameResult(total: number, target: number, filledSlots: number
         return { status: 'won', tier: null };
     }
 
-    return { status: 'finished', tier: tierForDistance(getDistance(total, target)) };
+    return { status: 'finished', tier: tierForDistance(getDistance(total, target), target) };
 }

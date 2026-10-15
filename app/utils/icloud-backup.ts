@@ -63,7 +63,11 @@ function isLiveCounter(key: string): boolean {
     return /(Streak|Run)$/.test(key) && !key.startsWith('best');
 }
 
-const DAILY_FIELDS = ['dailyStreak', 'lastDailyResultDate', 'dailyResults'] as const;
+// The Daily's live, date-tied fields travel together from whichever record
+// played a Daily most recently. dailyWinStreak is a live counter (the regex
+// above already keeps it out of the max); bestDailyWinStreak, titleWinners
+// and bestDailyScore are plain counts and take the max like everything else.
+const DAILY_FIELDS = ['dailyStreak', 'dailyWinStreak', 'lastDailyResultDate', 'dailyResults', 'dailyScores'] as const;
 
 function activity(stats: Json): number {
     return (isCount(stats.gamesPlayed) ? stats.gamesPlayed : 0) + (isCount(stats.dailyPlays) ? stats.dailyPlays : 0);

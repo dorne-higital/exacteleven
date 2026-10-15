@@ -1,4 +1,5 @@
 import { utcDateString } from '#shared/app-config';
+import { nextUkMidnight, ukDateString } from '#shared/uk-date';
 import type { AppConfig } from '#shared/app-config';
 
 // Read by the iOS app on launch/resume (and harmless for anyone else):
@@ -7,6 +8,8 @@ import type { AppConfig } from '#shared/app-config';
 // - storeUrl is where that prompt's button goes (NUXT_APP_STORE_URL).
 // - serverTime / dailyDate are a trusted clock, so moving the phone's clock
 //   can't preview or replay a Daily (see app/utils/trusted-date.ts).
+// - ukDate / nextDailyAt (Daily 2.0): the Daily's date on the UK calendar and
+//   when the next one starts (UK midnight). dailyDate keeps meaning UTC.
 // Additive: new fields may be added later, existing ones keep their meaning.
 export default defineEventHandler((event): AppConfig => {
     const config = useRuntimeConfig();
@@ -22,5 +25,7 @@ export default defineEventHandler((event): AppConfig => {
         serverTime: now.toISOString(),
         dailyDate: utcDateString(now),
         storeUrl: String(config.appStoreUrl || ''),
+        ukDate: ukDateString(now),
+        nextDailyAt: nextUkMidnight(now).toISOString(),
     };
 });

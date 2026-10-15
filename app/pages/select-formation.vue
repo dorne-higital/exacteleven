@@ -24,7 +24,7 @@ usePageSeoMeta({
         <div class="select-formation__inner">
             <div class="select-formation__intro">
                 <h1>Pick a formation</h1>
-                <p class="select-formation__lede">Its digits are your target: 4-3-3 means land on exactly 433.</p>
+                <p class="select-formation__lede">Its digits are your target: 4-3-3 means land on exactly 433. Odds are for a well-read fan.</p>
             </div>
 
             <ul class="formations">
@@ -39,6 +39,10 @@ usePageSeoMeta({
                         <span class="formations__details">
                             <span class="formations__code">{{ formation.code.split('').join('-') }}</span>
                             <span class="formations__rows">{{ formation.rows[0] }} DEF · {{ formation.rows[1] }} MID · {{ formation.rows[2] }} FWD</span>
+                            <span class="formations__odds">
+                                ≈{{ Math.round(FORMATION_DIFFICULTY[formation.code].exactPct) }}% exact ·
+                                {{ Math.round(FORMATION_DIFFICULTY[formation.code].titleOrBetterPct) }}% Title or better
+                            </span>
                         </span>
                         <span class="formations__end">
                             <span class="formations__target">{{ formation.target }}</span>
@@ -158,6 +162,14 @@ h1 {
     color: var(--color-muted);
     font-size: 0.75rem;
     margin-top: 0.3rem;
+}
+
+.formations__odds {
+    color: var(--color-muted);
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    font-variant-numeric: tabular-nums;
+    margin-top: 0.15rem;
 }
 
 .formations__end {

@@ -242,3 +242,163 @@ export function computeWinOdds(input: WinOddsInput): WinOdds {
 
     return computeWinOddsFromPools(pools, input.objectiveKind, input.objectiveValue, input.runningTotal);
 }
+
+// ---------------------------------------------------------------------------
+// Fixed-option puzzles (Daily 2.0; later the Weekly XI and Head-to-Head)
+// ---------------------------------------------------------------------------
+//
+// With every slot's options fixed and known, the "ways to win" are counted
+// over (completion, captain) pairs: one option per still-empty slot, times
+// where the armband ends up. A dynamic programme over (sum, armband placed?)
+// counts them exactly in O(slots × 3 × 2 × maxSum) — under a millisecond for
+// a whole Daily — instead of enumerating up to 3^9 × 9 pairs.
+
+/** Where the armband is, for counting purposes. */
+export type FixedSetCaptain =
+    /** Already on a filled slot: its doubling is in `baseTotal`. */
+    | { mode: 'fixed' }
+    /** Named on the still-empty slot `openSets[index]` (a blind captain): that slot's options count double. */
+    | { mode: 'open'; index: number }
+    /** Not named yet: it can go on any still-empty slot, or on one of these filled slots (their RAW values). */
+    | { mode: 'free'; filledValues: readonly number[] };
+
+export interface FixedSetInput {
+    objectiveKind: ObjectiveKind;
+    objectiveValue: number;
+    /** The counted total so far (locked + filled, captain doubling included if the captain slot is filled). */
+    baseTotal: number;
+    /** RAW day-stat values of each still-empty slot's current options. */
+    openSets: readonly (readonly number[])[];
+    captain: FixedSetCaptain;
+}
+
+function captainChoices(input: FixedSetInput): number {
+    if (input.captain.mode !== 'free') {
+        return 1;
+    }
+
+    return input.openSets.length + input.captain.filledValues.length;
+}
+
+/**
+ * How many (completion, captain) pairs land on each final total:
+ * `counts[t]` = pairs finishing on total t. `pairs` is the sum of counts.
+ * Not used for allUnder (whose win is per player, not on the total).
+ */
+export function fixedSetTotals(input: FixedSetInput): { counts: Float64Array; pairs: number } {
+    const { openSets, captain, baseTotal } = input;
+    const free = captain.mode === 'free';
+    const extraMax = free ? Math.max(0, ...captain.filledValues) : 0;
+    const maxSum = baseTotal + openSets.reduce((sum, set) => sum + 2 * Math.max(0, ...set), 0) + extraMax;
+    // plain[s]: ways with the armband NOT placed on an empty slot (yet);
+    // armed[s]: ways with it placed on one of the empty slots so far.
+    let plain = new Float64Array(maxSum + 1);
+    let armed = new Float64Array(maxSum + 1);
+
+    plain[baseTotal] = 1;
+
+    openSets.forEach((set, index) => {
+        const nextPlain = new Float64Array(maxSum + 1);
+        const nextArmed = new Float64Array(maxSum + 1);
+        const doubledHere = captain.mode === 'open' && captain.index === index;
+
+        for (let sum = 0; sum <= maxSum; sum += 1) {
+            const p = plain[sum]!;
+            const a = armed[sum]!;
+
+            if (p === 0 && a === 0) {
+                continue;
+            }
+
+            for (const value of set) {
+                if (doubledHere) {
+                    nextPlain[sum + 2 * value]! += p;
+                    continue;
+                }
+
+                nextPlain[sum + value]! += p;
+                nextArmed[sum + value]! += a;
+
+                if (free) {
+                    nextArmed[sum + 2 * value]! += p;
+                }
+            }
+        }
+
+        plain = nextPlain;
+        armed = nextArmed;
+    });
+
+    if (!free) {
+        return { counts: plain, pairs: plain.reduce((sum, ways) => sum + ways, 0) };
+    }
+
+    // Free armband: on an empty slot (armed), or on a filled slot (plain
+    // shifted by that slot's value, since its first copy is already counted).
+    const counts = armed;
+
+    for (const value of captain.filledValues) {
+        for (let sum = 0; sum + value <= maxSum; sum += 1) {
+            counts[sum + value]! += plain[sum]!;
+        }
+    }
+
+    return { counts, pairs: counts.reduce((sum, ways) => sum + ways, 0) };
+}
+
+function fixedSetAllUnderOdds(input: FixedSetInput): WinOdds {
+    const limit = input.objectiveValue;
+    const safe = input.openSets.map((set) => set.filter((value) => value < limit).length);
+    const safeDoubled = input.openSets.map((set) => set.filter((value) => 2 * value < limit).length);
+    const sizes = input.openSets.map((set) => set.length);
+    const product = (counts: number[], skip = -1): number => counts.reduce((acc, count, index) => (index === skip ? acc : acc * count), 1);
+    const totalCompletions = product(sizes);
+    const { captain } = input;
+
+    if (captain.mode === 'fixed') {
+        return { waysToWin: product(safe), totalWays: totalCompletions };
+    }
+
+    if (captain.mode === 'open') {
+        return { waysToWin: product(safe, captain.index) * safeDoubled[captain.index]!, totalWays: totalCompletions };
+    }
+
+    let waysToWin = 0;
+
+    input.openSets.forEach((_, index) => {
+        waysToWin += product(safe, index) * safeDoubled[index]!;
+    });
+
+    for (const value of captain.filledValues) {
+        if (2 * value < limit) {
+            waysToWin += product(safe);
+        }
+    }
+
+    return { waysToWin, totalWays: totalCompletions * captainChoices(input) };
+}
+
+/** Winning (completion, captain) pairs over the fixed option sets, and all pairs. */
+export function fixedSetWinOdds(input: FixedSetInput): WinOdds {
+    if (input.objectiveKind === 'allUnder') {
+        return fixedSetAllUnderOdds(input);
+    }
+
+    const { counts, pairs } = fixedSetTotals(input);
+    const target = input.objectiveValue;
+    let waysToWin = 0;
+
+    if (input.objectiveKind === 'exact') {
+        waysToWin = target >= 0 && target < counts.length ? counts[target]! : 0;
+    } else if (input.objectiveKind === 'under') {
+        for (let sum = 0; sum < Math.min(target, counts.length); sum += 1) {
+            waysToWin += counts[sum]!;
+        }
+    } else {
+        for (let sum = Math.max(0, target + 1); sum < counts.length; sum += 1) {
+            waysToWin += counts[sum]!;
+        }
+    }
+
+    return { waysToWin, totalWays: pairs };
+}

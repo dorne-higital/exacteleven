@@ -81,19 +81,32 @@ export function getFormation(code: string): Formation | undefined {
     return formations.find((formation) => formation.code === code);
 }
 
-// Difficulty tiers straight from the Phase 2 balance simulation (tolerance
-// ±20, "sensible" stat-aware strategy win rate): 343/352 ~20-23%, 442/433/451
-// ~6-10%, 541/532 ~1-2%. Not a guess — see scripts/simulate.ts's output.
-// Shared by the formation picker (index.vue) and the stats modal's
-// "which formations get played" chart, so the two never drift apart.
-export const FORMATION_DIFFICULTY: Record<FormationCode, { label: string; tier: 'easier' | 'balanced' | 'hardest' }> = {
-    343: { label: 'Easier', tier: 'easier' },
-    352: { label: 'Easier', tier: 'easier' },
-    433: { label: 'Balanced', tier: 'balanced' },
-    442: { label: 'Balanced', tier: 'balanced' },
-    451: { label: 'Balanced', tier: 'balanced' },
-    532: { label: 'Hardest', tier: 'hardest' },
-    541: { label: 'Hardest', tier: 'hardest' },
+// Difficulty tiers and figures from scripts/simulate.ts with the live draw
+// bias and the fairer final slot modelled (DAILY2_SPEC §1.8): the "fan"
+// model (knows each hidden number to within about ±45%), 4,000 games per
+// formation. The old "343/352 ~20-23% ... 541/532 ~1-2%" comment predated
+// both the server's guaranteed-winnable option and the exact-only win, so
+// it no longer described the game. `exactPct` is the jackpot (landing
+// exactly on target); `titleOrBetterPct` adds the Title winners window.
+// Shared by the formation picker (select-formation.vue) and the stats
+// modal's "which formations get played" chart, so the two never drift apart.
+export interface FormationDifficulty {
+    label: string;
+    tier: 'easier' | 'balanced' | 'hardest';
+    /** % of games landing exactly on target (fan model). */
+    exactPct: number;
+    /** % of games finishing exact or in the Title winners window (fan model). */
+    titleOrBetterPct: number;
+}
+
+export const FORMATION_DIFFICULTY: Record<FormationCode, FormationDifficulty> = {
+    343: { label: 'Easier', tier: 'easier', exactPct: 9.4, titleOrBetterPct: 34.5 },
+    352: { label: 'Easier', tier: 'easier', exactPct: 8.8, titleOrBetterPct: 32.6 },
+    433: { label: 'Balanced', tier: 'balanced', exactPct: 8.3, titleOrBetterPct: 23.9 },
+    442: { label: 'Balanced', tier: 'balanced', exactPct: 8.1, titleOrBetterPct: 22.8 },
+    451: { label: 'Balanced', tier: 'balanced', exactPct: 7.9, titleOrBetterPct: 21.6 },
+    532: { label: 'Hardest', tier: 'hardest', exactPct: 6.5, titleOrBetterPct: 14.8 },
+    541: { label: 'Hardest', tier: 'hardest', exactPct: 6.5, titleOrBetterPct: 14.8 },
 };
 
 type SlotRoleKind =

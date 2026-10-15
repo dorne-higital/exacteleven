@@ -1,199 +1,324 @@
-// Balance simulation for the seven v1 formations, using the real player pool
-// from server/assets/players.json. Plays many games per formation under two
-// strategies to gauge whether the D1 (bust on overshoot) / D4 (25+ appearance
-// pool floor) decisions produce a fair, winnable-but-not-trivial game:
+// Classic balance simulation for the seven formations, using the real player
+// pool (server/assets/players.json) and the REAL draw code the server runs
+// (server/utils/classic-draw.ts) — including the live viability bias, which
+// the original version of this script never modelled (that's why the old
+// "<1% exact" figure in the README was stale: /api/draw always guaranteed
+// one option that keeps a win possible, and on the final slot that option
+// always landed EXACTLY on the target).
 //
-//   - "random":   picks uniformly at random from the 3 offered players.
-//   - "sensible": a semi-informed player who (unrealistically, since real
-//     players can't see hidden stats) knows each candidate's true G+A and
-//     picks whichever is closest to a fair share of the remaining target
-//     over the remaining slots. This is a ceiling estimate of how good an
-//     experienced player's *guesses* could get, not a realistic strategy.
+// It compares two final-slot rules on otherwise identical games:
+//   - before: the guaranteed final-slot option always lands exactly (pre-2.0);
+//   - after:  the live rule (shared/classic.ts) — exact only
+//             FINAL_SLOT_EXACT_CHANCE of the time, otherwise inside the Title
+//             winners window (gap − W … gap − 1).
+// and three player models:
+//   - random: picks uniformly from the 3 options;
+//   - fan:    sees each hidden G+A through ±45% log-normal noise (a
+//             knowledgeable player) and aims for a fair share of what's left;
+//   - oracle: knows the true numbers (a ceiling, not a real player).
+// Slots are filled in a random order, like real taps.
 //
-// Also reports the full distribution of finishing distances (every non-bust
-// game that isn't an exact win) — used to empirically pick the 5
-// league-table tier boundaries in app/utils/scoring.ts, the same way
-// WIN_TOLERANCE was originally picked.
+// Output: per-formation exact/Title rates, P(win | reached the last slot with
+// an exact landing possible), the result-ladder shares (app/utils/scoring.ts's
+// getGameResult — the same function the game uses), and the figures for
+// app/utils/formations.ts's FORMATION_DIFFICULTY.
+//
+// Earlier slots' viability uses a memoised "which sums can the remaining
+// positions still make" table that ignores exclusions — the server's own
+// check (buildViabilityCheck) honours them, but the difference is tiny and
+// this keeps 250k+ games fast.
+//
+// Run: yarn sim:balance [gamesPerFormation=4000] [seed=2026]
 import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { formations } from '../app/utils/formations.ts';
-import { calculateTotal, getGameResult } from '../app/utils/scoring.ts';
-import type { Formation, GameStatus, Player, PositionGroup } from '../shared/types.ts';
+import { getGameResult } from '../app/utils/scoring.ts';
+import { drawWithViabilityBias, finalSlotViable, sampleWithoutReplacement, type Rng } from '../server/utils/classic-draw.ts';
+import { titleWindowFor } from '../shared/classic.ts';
+import { mulberry32 } from '../shared/daily.ts';
+import type { Formation, Player, PositionGroup, ResultTier } from '../shared/types.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const PLAYERS_PATH = join(ROOT, 'server/assets/players.json');
-const GAMES_PER_STRATEGY = 5000;
-const STRATEGIES = ['random', 'sensible'] as const;
+const GAMES = Number(process.argv[2] ?? 4000);
+const SEED = Number(process.argv[3] ?? 2026);
+const RULES = ['before', 'after'] as const;
+const MODELS = ['random', 'fan', 'oracle'] as const;
+const FAN_NOISE = 0.45;
+const MAX_SUM = 2000;
 
-type Strategy = (typeof STRATEGIES)[number];
+type Rule = (typeof RULES)[number];
+type Model = (typeof MODELS)[number];
+type Outcome = 'exact' | ResultTier | 'bust';
 
-interface StrategyTotals {
-    wins: number;
-    busts: number;
-    finished: number;
-    distanceSum: number;
+const OUTCOMES: Outcome[] = ['exact', 'titleWinners', 'championsLeague', 'europaLeague', 'midTable', 'avoidedRelegation', 'relegated', 'bust'];
+const OUTCOME_LABEL: Record<Outcome, string> = {
+    exact: 'exact',
+    titleWinners: 'Title',
+    championsLeague: 'CL',
+    europaLeague: 'EL',
+    midTable: 'Mid',
+    avoidedRelegation: 'AR',
+    relegated: 'Rel',
+    bust: 'bust',
+};
+
+const value = (player: Player): number => player.goals + player.assists;
+
+function gaussian(rng: Rng): number {
+    return Math.sqrt(-2 * Math.log(rng() || 1e-9)) * Math.cos(2 * Math.PI * rng());
 }
 
-function shuffle<T>(items: T[]): T[] {
+function shuffled<T>(items: readonly T[], rng: Rng): T[] {
     const copy = [...items];
 
     for (let i = copy.length - 1; i > 0; i -= 1) {
-        const j = Math.floor(Math.random() * (i + 1));
+        const j = Math.floor(rng() * (i + 1));
 
-        [copy[i], copy[j]] = [copy[j], copy[i]];
+        [copy[i], copy[j]] = [copy[j]!, copy[i]!];
     }
 
     return copy;
 }
 
-function drawThree(pool: Player[], excluded: Set<string>): Player[] {
-    const eligible = pool.filter((player) => !excluded.has(player.id));
-
-    return shuffle(eligible).slice(0, 3);
+interface Pools {
+    byGroup: Record<PositionGroup, Player[]>;
+    distinctValues: Record<PositionGroup, number[]>;
+    reachMemo: Map<string, Uint8Array>;
 }
 
-function pickRandom(offered: Player[]): Player {
-    return offered[Math.floor(Math.random() * offered.length)];
+// Which totals the remaining positions can still add up to (exclusions ignored).
+function reachable(pools: Pools, groups: readonly PositionGroup[]): Uint8Array {
+    const key = (['GK', 'DEF', 'MID', 'FWD'] as const).map((group) => groups.filter((g) => g === group).length).join(',');
+    const hit = pools.reachMemo.get(key);
+
+    if (hit) {
+        return hit;
+    }
+
+    let sums = new Uint8Array(MAX_SUM + 1);
+
+    sums[0] = 1;
+
+    for (const group of groups) {
+        const next = new Uint8Array(MAX_SUM + 1);
+
+        for (let sum = 0; sum <= MAX_SUM; sum += 1) {
+            if (sums[sum]) {
+                for (const v of pools.distinctValues[group]) {
+                    if (sum + v <= MAX_SUM) {
+                        next[sum + v] = 1;
+                    }
+                }
+            }
+        }
+
+        sums = next;
+    }
+
+    pools.reachMemo.set(key, sums);
+
+    return sums;
 }
 
-function pickSensible(offered: Player[], remainingTarget: number, remainingSlots: number): Player {
-    const fairShare = remainingTarget / remainingSlots;
+function drawSlot(pools: Pools, group: PositionGroup, excluded: Set<string>, others: readonly PositionGroup[], target: number, total: number, rule: Rule, rng: Rng): Player[] {
+    const eligible = pools.byGroup[group].filter((player) => !excluded.has(player.id));
+    const gap = target - total;
+    let viable: Player[];
 
-    return offered.reduce((best, candidate) => {
-        const candidateValue = candidate.goals + candidate.assists;
-        const bestValue = best.goals + best.assists;
+    if (others.length === 0) {
+        viable = rule === 'before'
+            ? eligible.filter((player) => value(player) === gap)
+            : finalSlotViable(eligible, gap, target, value, rng);
+    } else {
+        const reach = reachable(pools, others);
 
-        return Math.abs(candidateValue - fairShare) < Math.abs(bestValue - fairShare) ? candidate : best;
-    });
+        viable = eligible.filter((player) => {
+            const left = gap - value(player);
+
+            return left >= 0 && left <= MAX_SUM && reach[left] === 1;
+        });
+    }
+
+    return viable.length === 0 ? sampleWithoutReplacement(eligible, 3, rng) : drawWithViabilityBias(eligible, viable, 3, rng);
 }
 
-function simulateGame(
-    formation: Formation,
-    poolsByPosition: Record<PositionGroup, Player[]>,
-    strategy: Strategy,
-): { status: GameStatus; distance: number } {
+function choose(options: Player[], model: Model, gap: number, slotsLeft: number, rng: Rng): Player {
+    if (model === 'random') {
+        return options[Math.floor(rng() * options.length)]!;
+    }
+
+    const share = gap / slotsLeft;
+    let best = options[0]!;
+    let bestScore = Infinity;
+
+    for (const option of options) {
+        const seen = model === 'oracle' ? value(option) : value(option) * Math.exp(FAN_NOISE * gaussian(rng));
+        // Over the gap is a bust: avoid it above everything else.
+        const score = (slotsLeft === 1 ? gap - seen : Math.abs(seen - share)) + (seen > gap ? 1000 + seen - gap : 0);
+
+        if (score < bestScore) {
+            bestScore = score;
+            best = option;
+        }
+    }
+
+    return best;
+}
+
+interface GameRecord {
+    outcome: Outcome;
+    /** Reached the last slot alive with some player in the pool landing it exactly. */
+    lastSlotExactReachable: boolean;
+}
+
+function playGame(pools: Pools, formation: Formation, rule: Rule, model: Model, rng: Rng): GameRecord {
+    const order = shuffled(formation.slots.map((slot) => slot.group), rng);
     const excluded = new Set<string>();
-    const picked: Player[] = [];
     let total = 0;
-    let status: GameStatus = 'playing';
+    let lastSlotExactReachable = false;
 
-    for (let index = 0; index < formation.slots.length; index += 1) {
-        const slot = formation.slots[index];
-        const offered = drawThree(poolsByPosition[slot.group], excluded);
+    for (let index = 0; index < order.length; index += 1) {
+        const group = order[index]!;
+        const others = order.slice(index + 1);
 
-        for (const candidate of offered) {
-            excluded.add(candidate.id);
+        if (others.length === 0) {
+            const gap = formation.target - total;
+
+            lastSlotExactReachable = pools.byGroup[group].some((player) => !excluded.has(player.id) && value(player) === gap);
         }
 
-        const remainingSlots = formation.slots.length - index;
-        const remainingTarget = formation.target - total;
-        const choice = strategy === 'random'
-            ? pickRandom(offered)
-            : pickSensible(offered, remainingTarget, remainingSlots);
+        const options = drawSlot(pools, group, excluded, others, formation.target, total, rule, rng);
 
-        picked.push(choice);
-        total = calculateTotal(picked);
-
-        const result = getGameResult(total, formation.target, picked.length, formation.slots.length);
-
-        status = result.status;
-
-        if (status === 'bust') {
-            break;
+        for (const option of options) {
+            excluded.add(option.id);
         }
-    }
 
-    return { status, distance: status === 'finished' ? Math.abs(formation.target - total) : 0 };
-}
+        total += value(choose(options, model, formation.target - total, order.length - index, rng));
 
-function runStrategy(
-    formation: Formation,
-    poolsByPosition: Record<PositionGroup, Player[]>,
-    strategy: Strategy,
-    allDistances: number[],
-): StrategyTotals {
-    const totals: StrategyTotals = { wins: 0, busts: 0, finished: 0, distanceSum: 0 };
+        const result = getGameResult(total, formation.target, index + 1, order.length);
 
-    for (let i = 0; i < GAMES_PER_STRATEGY; i += 1) {
-        const { status, distance } = simulateGame(formation, poolsByPosition, strategy);
+        if (result.status === 'bust') {
+            return { outcome: 'bust', lastSlotExactReachable };
+        }
 
-        if (status === 'won') {
-            totals.wins += 1;
-        } else if (status === 'bust') {
-            totals.busts += 1;
-        } else if (status === 'finished') {
-            totals.finished += 1;
-            totals.distanceSum += distance;
-            allDistances.push(distance);
+        if (result.status === 'won') {
+            return { outcome: 'exact', lastSlotExactReachable };
+        }
+
+        if (result.status === 'finished') {
+            return { outcome: result.tier!, lastSlotExactReachable };
         }
     }
 
-    return totals;
+    return { outcome: 'bust', lastSlotExactReachable };
 }
 
-function percentile(sorted: number[], p: number): number {
-    if (sorted.length === 0) {
-        return 0;
-    }
-
-    const index = Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length));
-
-    return sorted[index]!;
-}
+const pct = (part: number, whole: number): string => `${((100 * part) / Math.max(1, whole)).toFixed(1)}%`;
 
 async function main(): Promise<void> {
     const players = JSON.parse(await readFile(PLAYERS_PATH, 'utf8')) as Player[];
-    const poolsByPosition: Record<PositionGroup, Player[]> = { GK: [], DEF: [], MID: [], FWD: [] };
+    const pools: Pools = {
+        byGroup: { GK: [], DEF: [], MID: [], FWD: [] },
+        distinctValues: { GK: [], DEF: [], MID: [], FWD: [] },
+        reachMemo: new Map(),
+    };
 
     for (const player of players) {
-        poolsByPosition[player.position].push(player);
+        pools.byGroup[player.position].push(player);
     }
 
-    console.log('\n=== Exact XI — balance simulation ===');
-    console.log(
-        `${GAMES_PER_STRATEGY} games per formation per strategy, using the real ${players.length}-player v1 pool `
-        + `(2016/17+). Win = exact match only.\n`,
-    );
-    console.log('Formation | Strategy | Win%  | Bust% | Finished% | AvgDistance (finished only)');
-    console.log('----------|----------|-------|-------|-----------|----------------------------');
+    for (const group of ['GK', 'DEF', 'MID', 'FWD'] as const) {
+        pools.distinctValues[group] = [...new Set(pools.byGroup[group].map(value))];
+    }
 
-    const allDistances: number[] = [];
+    const rng = mulberry32(SEED);
 
-    for (const formation of formations) {
-        for (const strategy of STRATEGIES) {
-            const totals = runStrategy(formation, poolsByPosition, strategy, allDistances);
-            const winPct = (totals.wins / GAMES_PER_STRATEGY) * 100;
-            const bustPct = (totals.busts / GAMES_PER_STRATEGY) * 100;
-            const finishedPct = (totals.finished / GAMES_PER_STRATEGY) * 100;
-            const avgDistance = totals.finished > 0 ? totals.distanceSum / totals.finished : 0;
+    console.log('\n=== Exact XI — Classic balance simulation ===');
+    console.log(`${GAMES} games per formation, rule and model; ${players.length} players; seed ${SEED}.`);
+    console.log(`Title window W = titleWindowFor(target): ${formations.map((f) => `${f.code}=${titleWindowFor(f.target)}`).join(' ')}\n`);
 
-            console.log(
-                `${formation.code.padEnd(9)} | ${strategy.padEnd(8)} | ${winPct.toFixed(2).padStart(5)} | `
-                + `${bustPct.toFixed(1).padStart(5)} | ${finishedPct.toFixed(1).padStart(9)} | ${avgDistance.toFixed(1)}`,
-            );
+    const tallies = new Map<string, Record<Outcome, number>>();
+    const lastSlot = new Map<string, { reached: number; won: number }>();
+
+    for (const rule of RULES) {
+        for (const model of MODELS) {
+            for (const formation of formations) {
+                const tally = Object.fromEntries(OUTCOMES.map((outcome) => [outcome, 0])) as Record<Outcome, number>;
+                const last = { reached: 0, won: 0 };
+
+                for (let game = 0; game < GAMES; game += 1) {
+                    const record = playGame(pools, formation, rule, model, rng);
+
+                    tally[record.outcome] += 1;
+
+                    if (record.lastSlotExactReachable) {
+                        last.reached += 1;
+                        last.won += record.outcome === 'exact' ? 1 : 0;
+                    }
+                }
+
+                tallies.set(`${rule}|${model}|${formation.code}`, tally);
+                lastSlot.set(`${rule}|${model}|${formation.code}`, last);
+            }
         }
     }
 
-    const sorted = [...allDistances].sort((a, b) => a - b);
+    const sum = (rule: Rule, model: Model): { tally: Record<Outcome, number>; last: { reached: number; won: number } } => {
+        const tally = Object.fromEntries(OUTCOMES.map((outcome) => [outcome, 0])) as Record<Outcome, number>;
+        const last = { reached: 0, won: 0 };
 
-    console.log(`\n=== Distance distribution across all finished (non-exact, non-bust) games: n=${sorted.length} ===`);
-    console.log(`min=${sorted[0]} p10=${percentile(sorted, 10)} p25=${percentile(sorted, 25)} `
-        + `p40=${percentile(sorted, 40)} median=${percentile(sorted, 50)} p60=${percentile(sorted, 60)} `
-        + `p75=${percentile(sorted, 75)} p90=${percentile(sorted, 90)} p95=${percentile(sorted, 95)} `
-        + `max=${sorted[sorted.length - 1]}`);
+        for (const formation of formations) {
+            const one = tallies.get(`${rule}|${model}|${formation.code}`)!;
+            const oneLast = lastSlot.get(`${rule}|${model}|${formation.code}`)!;
 
-    const bins = [10, 25, 50, 75, 100, 150, 200, 300, Infinity];
-    let lower = 0;
+            for (const outcome of OUTCOMES) {
+                tally[outcome] += one[outcome];
+            }
 
-    console.log('\nHistogram (distance range -> count, % of finished):');
+            last.reached += oneLast.reached;
+            last.won += oneLast.won;
+        }
 
-    for (const upper of bins) {
-        const count = sorted.filter((d) => d > lower && d <= upper).length;
-        const label = upper === Infinity ? `>${lower}` : `${lower + 1}-${upper}`;
+        return { tally, last };
+    };
 
-        console.log(`  ${label.padEnd(10)} ${String(count).padStart(6)}  (${((count / sorted.length) * 100).toFixed(1)}%)`);
-        lower = upper;
+    const all = GAMES * formations.length;
+
+    console.log('Model  | Exact before | Exact after | Title after | P(win | last slot, exact reachable) before → after');
+    console.log('-------|--------------|-------------|-------------|---------------------------------------------------');
+
+    for (const model of MODELS) {
+        const before = sum('before', model);
+        const after = sum('after', model);
+
+        console.log(
+            `${model.padEnd(6)} | ${pct(before.tally.exact, all).padStart(12)} | ${pct(after.tally.exact, all).padStart(11)} | `
+            + `${pct(after.tally.titleWinners, all).padStart(11)} | ${pct(before.last.won, before.last.reached)} → ${pct(after.last.won, after.last.reached)}`,
+        );
+    }
+
+    console.log('\nResult-ladder shares of ALL games (new ladder, app/utils/scoring.ts):');
+
+    for (const rule of RULES) {
+        for (const model of MODELS) {
+            const { tally } = sum(rule, model);
+
+            console.log(`  ${rule.padEnd(6)} ${model.padEnd(6)} ${OUTCOMES.map((outcome) => `${OUTCOME_LABEL[outcome]} ${pct(tally[outcome], all)}`).join(' | ')}`);
+        }
+    }
+
+    console.log('\nPer formation, fan model, live rule → FORMATION_DIFFICULTY (app/utils/formations.ts):');
+    console.log('Code | Exact % | Title-or-better % | (before: exact %)');
+
+    for (const formation of formations) {
+        const after = tallies.get(`after|fan|${formation.code}`)!;
+        const before = tallies.get(`before|fan|${formation.code}`)!;
+
+        console.log(
+            `${formation.code}  | ${pct(after.exact, GAMES).padStart(7)} | ${pct(after.exact + after.titleWinners, GAMES).padStart(17)} | ${pct(before.exact, GAMES)}`,
+        );
     }
 }
 

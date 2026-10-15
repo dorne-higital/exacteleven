@@ -123,8 +123,8 @@ if (!isApp) {
 // - PITCH GREEN (--color-primary) is the board itself and secondary
 //   actions (links, focus rings, quiet buttons).
 // - Red is an homage only: no club crests, names or branding anywhere.
-// - Result tiers use the --tier-* ladder (green -> teal -> slate ->
-//   amber -> muted), never ad-hoc mixes.
+// - Result tiers use the --tier-* ladder (deep bib -> green -> teal ->
+//   slate -> amber -> muted), never ad-hoc mixes.
 // - Type: --font-display (Big Shoulders, Display cut, 700-900, UPPERCASE for
 //   headers/labels), --font-body (Onest, 400-700), --font-mono (Spline
 //   Sans Mono, tabular-nums) for stat numbers.
@@ -142,8 +142,8 @@ if (!isApp) {
 //              --color-pitch-line, --color-pitch-ink
 //   Bib (red)  --color-bib, --color-on-bib
 //   Support    --color-amber, --color-teal, --color-slate, --color-bust
-//   Tiers      --tier-cl, --tier-el, --tier-mid, --tier-avoided,
-//              --tier-relegated
+//   Tiers      --tier-title, --tier-cl, --tier-el, --tier-mid,
+//              --tier-avoided, --tier-relegated
 //   Slots      --slot-empty-bg/-border/-text, --slot-filled-text (ink on
 //              --color-surface), --slot-filled-bg/-ink (bib-chip pair),
 //              --slot-next (the slot being picked)
@@ -206,7 +206,10 @@ if (!isApp) {
     --color-slate: #4f5d66;
     --color-bust: var(--color-slate);
 
-    // Result-tier ladder, best to worst
+    // Result-tier ladder, best to worst. Title winners (a few off the
+    // exact target) sits next to the red exact moment: a deep bib tone,
+    // derived from the kit's own bib + ink so every Kit Bag theme follows.
+    --tier-title: color-mix(in srgb, var(--color-bib) 62%, var(--color-foreground));
     --tier-cl: var(--color-primary);
     --tier-el: var(--color-teal);
     --tier-mid: var(--color-slate);

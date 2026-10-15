@@ -17,10 +17,26 @@ const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 const TOKEN_TTL_MS = 5 * 60 * 1000;
 
+// The app's tokens live longer: a phone gets locked or backgrounded mid-pick
+// far more often than a browser tab, and the 5-minute expiry turned that
+// into a "timed out" error. The TTL is carried INSIDE the signed payload
+// (so it can't be stretched client-side) and capped here, so even a token
+// signed with a bigger ttl never outlives 30 minutes. Tokens without a `ttl`
+// (every token signed before this, and every web token) behave exactly as
+// before.
+export const TOKEN_TTL_LONG_MS = 30 * 60 * 1000;
+
 interface TokenPayload {
     playerId: string;
     gameId: string;
     issuedAt: number;
+    /** Optional lifetime in ms, inside the signature. Absent = TOKEN_TTL_MS. */
+    ttl?: number;
+}
+
+export interface SignTokenOptions {
+    /** Token lifetime in ms; capped at TOKEN_TTL_LONG_MS when verified. Omit for the default 5 minutes. */
+    ttlMs?: number;
 }
 
 async function importKey(secret: string): Promise<CryptoKey> {
@@ -58,6 +74,7 @@ function decodePayload(encoded: string): TokenPayload | null {
             && typeof (parsed as TokenPayload).playerId === 'string'
             && typeof (parsed as TokenPayload).gameId === 'string'
             && typeof (parsed as TokenPayload).issuedAt === 'number'
+            && ((parsed as TokenPayload).ttl === undefined || typeof (parsed as TokenPayload).ttl === 'number')
         ) {
             return parsed as TokenPayload;
         }
@@ -85,9 +102,17 @@ function timingSafeEqual(a: string, b: string): boolean {
     return mismatch === 0;
 }
 
-export async function signPlayerToken(playerId: string, gameId: string, secret: string): Promise<string> {
+export async function signPlayerToken(playerId: string, gameId: string, secret: string, options: SignTokenOptions = {}): Promise<string> {
     const key = await importKey(secret);
-    const encodedPayload = encodePayload({ playerId, gameId, issuedAt: Date.now() });
+    const payload: TokenPayload = { playerId, gameId, issuedAt: Date.now() };
+
+    // Only written when asked for, so a default token's payload (and so its
+    // bytes) is identical to every token signed before long tokens existed.
+    if (options.ttlMs !== undefined) {
+        payload.ttl = options.ttlMs;
+    }
+
+    const encodedPayload = encodePayload(payload);
     const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(encodedPayload));
 
     return `${encodedPayload}.${toHex(signature)}`;
@@ -147,11 +172,23 @@ export async function verifyPlayerToken(token: string, gameId: string, secret: s
         return { valid: false, reason: 'invalid' };
     }
 
-    if (Date.now() - check.payload.issuedAt > TOKEN_TTL_MS) {
+    if (Date.now() - check.payload.issuedAt > tokenLifetime(check.payload)) {
         return { valid: false, reason: 'expired' };
     }
 
     return { valid: true, playerId: check.payload.playerId };
+}
+
+// The payload's own ttl when it carries one (never more than the long cap),
+// else the original 5 minutes.
+function tokenLifetime(payload: TokenPayload): number {
+    const ttl = payload.ttl;
+
+    if (ttl === undefined || !Number.isFinite(ttl) || ttl <= 0) {
+        return TOKEN_TTL_MS;
+    }
+
+    return Math.min(ttl, TOKEN_TTL_LONG_MS);
 }
 
 // Same checks as verifyPlayerToken, but an expired token still passes as

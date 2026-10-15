@@ -6,10 +6,29 @@ import { getAchievementProgress, TIERS } from '../utils/achievements';
 import { FORMATION_DIFFICULTY, formations } from '../utils/formations';
 import { isAvailable as gameCenterAvailable, showLeaderboards } from '../utils/game-center';
 import { isAppBuild } from '../utils/platform';
+import { resolveDailyDate } from '../utils/trusted-date';
+import { TIER_COPY } from '../utils/tier-copy';
 
 const open = defineModel<boolean>('open', { default: false });
 
-const { stats, resetStats } = useStats();
+const { stats, resetStats, currentDailyStreak, currentDailyWinStreak } = useStats();
+
+// Streaks show 0 once a day was missed (the stored value only resets on the
+// next record). The UK date: the server's when the Daily has loaded it,
+// otherwise this device's clock.
+const { today } = useDaily();
+const dailyDate = computed(() => today.value ?? resolveDailyDate(null));
+const playedStreak = computed(() => currentDailyStreak(dailyDate.value));
+const winStreak = computed(() => currentDailyWinStreak(dailyDate.value));
+const recentScores = computed(() => stats.value.dailyScores.slice(-10));
+const DAILY_LETTER = { won: 'W', bust: 'B', lost: 'L' } as const;
+
+function scoreChipTitle(entry: { date: string; score: number; status: 'won' | 'bust' | 'lost'; beatPct: number | null }): string {
+    const status = entry.status === 'won' ? 'Won' : entry.status === 'bust' ? 'Bust' : 'Missed';
+    const beat = typeof entry.beatPct === 'number' ? `, beat ${entry.beatPct}%` : '';
+
+    return `${entry.date}: ${status}, ${entry.score} points${beat}`;
+}
 
 // App only: the Pro badge, the unassisted-wins count (on the website every
 // win is unassisted, so it would just repeat Wins) and the Game Center
@@ -33,6 +52,7 @@ const activeTab = ref<'stats' | 'achievements'>('stats');
 // so it rhymes with what a player already sees at the end of a game.
 const BAR_ROWS: ReadonlyArray<{ outcome: Outcome; label: string; colorClass: string; countKey: keyof typeof stats.value }> = [
     { outcome: 'champion', label: 'Champion', colorClass: 'win', countKey: 'wins' },
+    { outcome: 'titleWinners', label: TIER_COPY.titleWinners.label, colorClass: 'title-winners', countKey: 'titleWinners' },
     { outcome: 'championsLeague', label: 'Champions League', colorClass: 'champions-league', countKey: 'championsLeague' },
     { outcome: 'europaLeague', label: 'Europa League', colorClass: 'europa-league', countKey: 'europaLeague' },
     { outcome: 'midTable', label: 'Mid-table', colorClass: 'mid-table', countKey: 'midTable' },
@@ -200,7 +220,7 @@ function handleReset(): void {
                     <span class="stats-dialog__hero-label">Win rate</span>
                 </div>
                 <div class="stats-dialog__hero-stat">
-                    <span class="stats-dialog__hero-value">{{ stats.dailyStreak }}</span>
+                    <span class="stats-dialog__hero-value">{{ playedStreak }}</span>
                     <span class="stats-dialog__hero-label">Daily streak</span>
                 </div>
             </div>
@@ -267,6 +287,42 @@ function handleReset(): void {
                     </div>
                 </div>
             </div>
+
+            <section class="stats-dialog__daily" aria-labelledby="stats-dialog-daily-title">
+                <p id="stats-dialog-daily-title" class="stats-dialog__formations-heading">Daily</p>
+                <dl class="stats-dialog__runs">
+                    <div class="stats-dialog__run">
+                        <dt>Streak (days played)</dt>
+                        <dd>{{ playedStreak }}</dd>
+                    </div>
+                    <div class="stats-dialog__run">
+                        <dt>Best streak</dt>
+                        <dd>{{ stats.bestDailyStreak }}</dd>
+                    </div>
+                    <div class="stats-dialog__run">
+                        <dt>Win streak</dt>
+                        <dd>{{ winStreak }}</dd>
+                    </div>
+                    <div class="stats-dialog__run">
+                        <dt>Best score</dt>
+                        <dd>{{ stats.bestDailyScore > 0 ? stats.bestDailyScore : '—' }}</dd>
+                    </div>
+                </dl>
+                <div v-if="recentScores.length > 0" class="stats-dialog__scores" role="list" aria-label="Recent Daily scores">
+                    <span
+                        v-for="entry in recentScores"
+                        :key="entry.date"
+                        class="stats-dialog__score"
+                        :class="`stats-dialog__score--${entry.status}`"
+                        role="listitem"
+                        :title="scoreChipTitle(entry)"
+                    >
+                        <span aria-hidden="true" class="stats-dialog__score-letter">{{ DAILY_LETTER[entry.status] }}</span>
+                        <span aria-hidden="true" class="stats-dialog__score-value">{{ entry.score }}</span>
+                        <span class="stats-dialog__sr">{{ scoreChipTitle(entry) }}</span>
+                    </span>
+                </div>
+            </section>
 
             <button v-if="isApp && canOpenLeaderboards" class="stats-dialog__leaderboards" type="button" @click="openLeaderboards">
                 <AppIcon name="trophy" />
@@ -579,6 +635,72 @@ function handleReset(): void {
 // one red bar — the "exact" win moment.
 .stats-dialog__bar-fill--win {
     background-color: var(--color-bib);
+}
+
+.stats-dialog__bar-fill--title-winners {
+    background-color: var(--tier-title);
+}
+
+.stats-dialog__daily {
+    border-top: 1px solid var(--color-line);
+    margin-top: 1.1rem;
+    padding-top: 1rem;
+}
+
+.stats-dialog__scores {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    margin-bottom: 1rem;
+}
+
+// Recent Daily 2.0 scores in place of bare W/L/B chips: the letter plus the
+// points. A win is the red moment, a bust slate, a miss a quiet outline.
+.stats-dialog__score {
+    align-items: center;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-sm);
+    display: flex;
+    flex-direction: column;
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    min-width: 2.6rem;
+    padding: 0.2rem 0.3rem;
+}
+
+.stats-dialog__score--won {
+    background-color: var(--color-bib);
+    border-color: var(--color-bib);
+    color: var(--color-on-bib);
+}
+
+.stats-dialog__score--bust {
+    background-color: var(--color-bust);
+    border-color: var(--color-bust);
+    color: var(--color-background);
+}
+
+.stats-dialog__score-letter {
+    font-size: 0.6rem;
+    font-weight: 700;
+    opacity: 0.85;
+}
+
+.stats-dialog__score-value {
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.stats-dialog__sr {
+    border: 0;
+    clip-path: inset(50%);
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    padding: 0;
+    position: absolute;
+    white-space: nowrap;
+    width: 1px;
 }
 
 .stats-dialog__bar-fill--champions-league {

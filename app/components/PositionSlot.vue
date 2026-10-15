@@ -13,6 +13,18 @@ const props = defineProps<{
     gameOver?: boolean;
     /** True while this is the slot being picked for (its choice sheet is open) — the "next" bib-red highlight. */
     active?: boolean;
+    /** Daily 2.0: this slot holds the captain's armband (its number counts double). */
+    captain?: boolean;
+    /** Daily 2.0: the number to show on a filled chip (the day's stat — goals, assists or both). Defaults to goals + assists. */
+    value?: number | null;
+    /** Daily 2.0: the mystery sub came on in this slot. */
+    benched?: boolean;
+    /** Daily 2.0: this slot's pick has put you over and the bench decision is pending. */
+    pendingBust?: boolean;
+    /** Selection mode (naming a captain, choosing who to bench): the slot is tappable even when filled. */
+    selectable?: boolean;
+    /** In selection mode: this slot can't be chosen (greyed out). */
+    selectDisabled?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -21,19 +33,38 @@ const emit = defineEmits<{
 
 const description = computed(() => describeSlotRole(props.slotData.group, props.slotData.side, props.slotData.rowSize));
 const shortLabel = computed(() => getSlotShortLabel(props.slotData.group, props.slotData.side, props.slotData.rowSize));
+const shownValue = computed(() => {
+    const player = props.slotData.player;
+
+    if (!player) {
+        return null;
+    }
+
+    return props.value ?? player.goals + player.assists;
+});
 const label = computed(() => {
+    const extras = [
+        props.captain ? 'captain' : null,
+        props.benched ? 'came on from the bench' : null,
+        props.selectable && props.selectDisabled ? 'unavailable' : null,
+    ].filter(Boolean).join(', ');
+    const suffix = extras ? `, ${extras}` : '';
+
     if (!props.slotData.player) {
-        return `${description.value}, empty`;
+        return `${description.value}, empty${suffix}`;
     }
 
     return props.slotData.preset
-        ? `${description.value}, ${props.slotData.player.name}, pre-filled for today`
-        : `${description.value}, ${props.slotData.player.name}`;
+        ? `${description.value}, ${props.slotData.player.name}, pre-filled for today${suffix}`
+        : `${description.value}, ${props.slotData.player.name}${suffix}`;
 });
 const isEndedEmpty = computed(() => Boolean(props.gameOver) && !props.slotData.player);
+// Normally only an empty slot can be tapped; in selection mode (captain /
+// bench) any slot can, unless that choice isn't allowed.
+const isDisabled = computed(() => (props.selectable ? Boolean(props.selectDisabled) : Boolean(props.slotData.player) || Boolean(props.busy)));
 
 function handleClick(): void {
-    if (props.slotData.player || props.busy) {
+    if (isDisabled.value) {
         return;
     }
 
@@ -52,22 +83,30 @@ function handleClick(): void {
                 'position-slot--filled': slotData.player,
                 'position-slot--loading': loading,
                 'position-slot--tight': slotData.rowSize >= 5,
+                'position-slot--selectable': selectable && !selectDisabled,
+                'position-slot--select-disabled': selectable && selectDisabled,
+                'position-slot--pending-bust': pendingBust,
             },
         ]"
-        :disabled="Boolean(slotData.player) || busy"
+        :disabled="isDisabled"
         :style="{ left: `${slotData.x}%`, top: `${slotData.y}%` }"
         type="button"
         @click="handleClick"
     >
         <template v-if="slotData.player">
             <span class="position-slot__chip">
-                <span class="position-slot__total">{{ slotData.player.goals + slotData.player.assists }}</span>
+                <span class="position-slot__total">{{ shownValue }}</span>
                 <span v-if="slotData.preset" aria-hidden="true" class="position-slot__preset" title="Pre-filled for today's Daily Challenge">★</span>
+                <span v-if="benched" aria-hidden="true" class="position-slot__sub" title="Came on from the bench">⇄</span>
+                <span v-if="captain" aria-hidden="true" class="position-slot__armband" title="Captain: counts double">C</span>
             </span>
             <span class="position-slot__name">{{ shortenPlayerName(slotData.player.name) }}</span>
         </template>
         <template v-else>
-            <span aria-hidden="true" class="position-slot__chip">{{ isEndedEmpty ? '—' : '+' }}</span>
+            <span aria-hidden="true" class="position-slot__chip">
+                {{ isEndedEmpty ? '—' : '+' }}
+                <span v-if="captain" aria-hidden="true" class="position-slot__armband" title="Blind captain: whoever you pick here counts double">C</span>
+            </span>
             <span class="position-slot__group">{{ shortLabel }}</span>
         </template>
     </button>
@@ -91,8 +130,11 @@ function handleClick(): void {
     font: inherit;
     gap: 0.2rem;
     justify-content: center;
-    min-height: var(--tap-min);
-    min-width: var(--tap-min);
+
+    // One-handed picking: comfortably over the 44px minimum, since the pitch
+    // is where most taps land.
+    min-height: 3.25rem;
+    min-width: 3.25rem;
     padding: 0.15rem;
     position: absolute;
     text-align: center;
@@ -126,15 +168,15 @@ function handleClick(): void {
     font-family: var(--font-mono);
     font-size: 1rem;
     font-weight: 600;
-    height: 2.5rem;
+    height: 2.75rem;
     justify-content: center;
     line-height: 1;
     position: relative;
     transition: transform 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
-    width: 2.5rem;
+    width: 2.75rem;
 }
 
-.position-slot:not(:disabled):hover .position-slot__chip {
+.position-slot:not(:disabled, .position-slot--filled):hover .position-slot__chip {
     background-color: rgb(255 255 255 / 16%);
     border-style: solid;
 }
@@ -259,14 +301,14 @@ function handleClick(): void {
 // centre-to-centre gap stays positive. 4-wide rows already have the slack.
 @media (width <= 400px) {
     .position-slot--tight {
-        min-width: 2.6rem;
+        min-width: 2.9rem;
         padding: 0.15rem 0;
     }
 
     .position-slot--tight .position-slot__chip {
         font-size: 0.85rem;
-        height: 2.15rem;
-        width: 2.15rem;
+        height: 2.4rem;
+        width: 2.4rem;
     }
 
     .position-slot--tight .position-slot__name,
@@ -274,5 +316,64 @@ function handleClick(): void {
         font-size: 0.58rem;
         max-width: 2.85rem;
     }
+}
+
+// The captain's armband: a small bib-red "C" (captain-style highlights are
+// one of red's allowed uses). Bottom-left so it never collides with the
+// locked star (top-right) or the sub marker (bottom-right).
+.position-slot__armband {
+    align-items: center;
+    background-color: var(--color-bib);
+    border: 1.5px solid var(--slot-filled-bg);
+    border-radius: var(--radius-sm);
+    bottom: -0.35rem;
+    color: var(--color-on-bib);
+    display: flex;
+    font-family: var(--font-display);
+    font-size: 0.7rem;
+    font-weight: 900;
+    height: 1.05rem;
+    justify-content: center;
+    left: -0.35rem;
+    position: absolute;
+    width: 1.05rem;
+}
+
+.position-slot__sub {
+    align-items: center;
+    background-color: var(--color-teal);
+    border: 1.5px solid var(--slot-filled-bg);
+    border-radius: 50%;
+    bottom: -0.3rem;
+    color: var(--color-on-primary);
+    display: flex;
+    font-family: var(--font-body);
+    font-size: 0.6rem;
+    height: 1rem;
+    justify-content: center;
+    position: absolute;
+    right: -0.3rem;
+    width: 1rem;
+}
+
+// Selection mode (captain / bench): choosable slots get a solid pitch-ink
+// ring so they read as buttons; the rest fade back.
+.position-slot--selectable .position-slot__chip {
+    box-shadow: 0 0 0 2px var(--color-pitch-ink);
+}
+
+.position-slot--selectable:hover .position-slot__chip,
+.position-slot--selectable:focus-visible .position-slot__chip {
+    box-shadow: 0 0 0 3px var(--color-bib);
+}
+
+.position-slot--select-disabled {
+    opacity: 0.4;
+}
+
+// The pick that put you over, while you decide on the bench: slate, never red.
+.position-slot--pending-bust .position-slot__chip {
+    background-color: var(--color-bust);
+    color: var(--color-background);
 }
 </style>

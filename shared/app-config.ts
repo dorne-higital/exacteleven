@@ -1,3 +1,5 @@
+export { ukDateString } from './uk-date';
+
 // The /api/app-config response — shared so the server route and the app's
 // reader (app/utils/app-config.ts) can't drift. Additive only: shipped app
 // builds read these fields, so never rename or repurpose one.
@@ -12,6 +14,10 @@ export interface AppConfig {
     dailyDate: string;
     /** Where the update prompt sends people (the App Store listing); '' = not live yet. Added after v1, so optional. */
     storeUrl?: string;
+    /** Daily 2.0: today's date on the UK calendar (Europe/London) — the Daily's date on web and app. Optional: added after v1. */
+    ukDate?: string;
+    /** Daily 2.0: when the next Daily starts (next UK midnight), ISO 8601. Optional: added after v1. */
+    nextDailyAt?: string;
 }
 
 export function utcDateString(date: Date): string {

@@ -58,6 +58,21 @@ describe('mergeStatsJson', () => {
         expect(merged.dailyResults).toEqual([{ date: '2026-10-11', status: 'won' }]);
     });
 
+    it('moves the Daily 2.0 win streak and score log with the other Daily fields, and maxes the new bests', () => {
+        const local = stats({
+            gamesPlayed: 30, dailyPlays: 3, dailyStreak: 3, dailyWinStreak: 2, bestDailyWinStreak: 5, bestDailyScore: 900, titleWinners: 4,
+            lastDailyResultDate: '2026-10-10', dailyScores: [{ date: '2026-10-10', score: 900 }],
+        });
+        const cloud = stats({
+            gamesPlayed: 1, dailyPlays: 4, dailyStreak: 4, dailyWinStreak: 0, bestDailyWinStreak: 3, bestDailyScore: 950, titleWinners: 1,
+            lastDailyResultDate: '2026-10-11', dailyScores: [{ date: '2026-10-11', score: 400 }],
+        });
+        const merged = JSON.parse(mergeStatsJson(local, cloud)!);
+
+        expect(merged).toMatchObject({ dailyStreak: 4, dailyWinStreak: 0, bestDailyWinStreak: 5, bestDailyScore: 950, titleWinners: 4 });
+        expect(merged.dailyScores).toEqual([{ date: '2026-10-11', score: 400 }]);
+    });
+
     it('keeps the better best result and fields this build does not know', () => {
         const local = stats({ gamesPlayed: 9, bestResult: { outcome: 'midTable', formationCode: '442' } });
         const cloud = stats({ gamesPlayed: 2, bestResult: { outcome: 'champion', formationCode: '433' }, schemaVersion: 2, modes: { era: { wins: 1 } } });

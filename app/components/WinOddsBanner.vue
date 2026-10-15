@@ -18,7 +18,7 @@ const label = computed(() => (
 <template>
     <p v-if="label" class="win-odds">
         <AppIcon class="win-odds__icon" name="target" />
-        <span><strong>{{ label }}</strong> ways to win from here</span>
+        <span><strong>{{ label }}</strong> {{ label === '1' ? 'way' : 'ways' }} to win from here</span>
     </p>
 </template>
 

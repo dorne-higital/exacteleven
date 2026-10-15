@@ -1,6 +1,7 @@
-import { computed } from 'vue';
+import { computed, getCurrentInstance, onMounted } from 'vue';
 import { HINT_MIN_OPEN_SLOTS } from '#shared/hint';
-import type { DrawnPlayer, FormationCode, GameSlot, GameState, HintResult, Objective, Player, RefreshedToken, RevealResult, WinOdds } from '../../shared/types';
+import type { ClassicPickRequest, ClassicPickResponse } from '../../shared/daily2-types';
+import type { DrawnPlayer, FormationCode, GameSlot, GameState, HintResult, Objective, Player, PositionGroup, RefreshedToken, RevealResult, WinOdds } from '../../shared/types';
 import { trackEvent } from '../utils/analytics';
 import { apiErrorMessage, apiErrorStatus, apiFetch, classifyApiError } from '../utils/api';
 import { getObjectiveResult } from '../utils/daily-scoring';
@@ -10,6 +11,7 @@ import { createGameId } from '../utils/game-id';
 import { haptics } from '../utils/haptics';
 import { isAppBuild } from '../utils/platform';
 import { calculateTotal, getGameResult } from '../utils/scoring';
+import { isDailyV2Game, useDaily, writeDaily2Persisted } from './useDaily';
 import { usePurchases } from './usePurchases';
 
 // The /api/daily response shape — mirrors server/api/daily.get.ts's return value.
@@ -50,6 +52,12 @@ export interface PowerUpState {
 
 export type GameMode = 'classic' | 'daily' | 'challenge';
 
+// True for a Daily 2.0 game (fixed options, captain, bench, score out of
+// 1,000) — useGame's slot/pick/reroll functions hand those to useDaily().
+export function isDailyV2(game: Pick<GameState, 'daily2'> | null | undefined): boolean {
+    return isDailyV2Game(game);
+}
+
 export function gameMode(game: Pick<GameState, 'dailyDate' | 'objective'>): GameMode {
     if (game.dailyDate) {
         return 'daily';
@@ -77,6 +85,9 @@ function extraReason(game: GameState, isPro: boolean, boostBank: number): PowerU
 // closer to when it can meaningfully move a player's decision.
 const MIN_FILLED_FOR_WIN_ODDS = 6;
 const GAME_STORAGE_KEY = 'exact-xi-game';
+// The last Classic formation started — the home Play card's "Play 4-3-3
+// again" and the result screen's quick replay.
+export const LAST_FORMATION_STORAGE_KEY = 'exact-xi-last-formation';
 // An in-progress game nobody has touched for this long is dropped rather
 // than resumed — stands in for the old "new tab = fresh game" behavior that
 // sessionStorage gave for free.
@@ -86,6 +97,25 @@ const DRAW_ERROR_FALLBACK = 'Couldn\'t load players for that slot — tap it aga
 interface PersistedGame {
     savedAt: number;
     game: GameState;
+}
+
+// The minimum a saved game needs for the board to render it. Every build's
+// GameState has these (later builds only add optional fields), so this only
+// rejects corrupt storage, never a real older save.
+export function isPlayableGameShape(game: unknown): game is GameState {
+    if (!game || typeof game !== 'object') {
+        return false;
+    }
+
+    const candidate = game as Partial<GameState>;
+
+    return typeof candidate.gameId === 'string'
+        && typeof candidate.formationCode === 'string'
+        && Array.isArray(candidate.slots)
+        && candidate.slots.every((slot) => !!slot && typeof slot === 'object' && typeof slot.id === 'string')
+        && typeof candidate.target === 'number'
+        // Optional (Classic games have none), but must be usable when present.
+        && (candidate.objective === undefined || (!!candidate.objective && typeof candidate.objective.value === 'number'));
 }
 
 // Persisted so a hard refresh (or, in the iOS app, iOS killing the webview
@@ -103,7 +133,11 @@ function readPersistedGame(): GameState | null {
 
         const parsed = JSON.parse(raw) as Partial<PersistedGame> | null;
 
-        if (!parsed || typeof parsed !== 'object' || !parsed.game) {
+        if (!parsed || typeof parsed !== 'object' || !isPlayableGameShape(parsed.game)) {
+            // Corrupt, or written by something else: discard rather than let
+            // the board crash on it.
+            window.localStorage.removeItem(GAME_STORAGE_KEY);
+
             return null;
         }
 
@@ -134,7 +168,7 @@ function migrateSessionGame(): GameState | null {
 
         const game = JSON.parse(legacy) as GameState | null;
 
-        if (!game || typeof game !== 'object') {
+        if (!isPlayableGameShape(game)) {
             return null;
         }
 
@@ -146,7 +180,16 @@ function migrateSessionGame(): GameState | null {
     }
 }
 
+// A Daily 2.0 game (today's or an archive replay) has its own storage key
+// (see useDaily.ts), so starting a Classic game never overwrites a ranked
+// Daily in progress, and saving the Daily never overwrites a Classic one.
 function writePersistedGame(game: GameState | null): void {
+    if (game?.daily2) {
+        writeDaily2Persisted(game);
+
+        return;
+    }
+
     try {
         if (game) {
             const record: PersistedGame = { savedAt: Date.now(), game };
@@ -163,6 +206,56 @@ function writePersistedGame(game: GameState | null): void {
 
 function findSlot(game: GameState, slotId: string | null): GameSlot | undefined {
     return game.slots.find((candidate) => candidate.id === slotId);
+}
+
+// The next empty, non-locked slot in formation order after `fromSlotId`,
+// wrapping round to the start; never `fromSlotId` itself. With no
+// `fromSlotId`, the first empty slot. Null when nothing else is empty.
+export function nextEmptySlotIn(game: Pick<GameState, 'slots'>, fromSlotId?: string | null): string | null {
+    const { slots } = game;
+    const fromIndex = fromSlotId ? slots.findIndex((slot) => slot.id === fromSlotId) : -1;
+
+    for (let step = 1; step <= slots.length; step += 1) {
+        const slot = slots[(fromIndex + step + slots.length) % slots.length]!;
+
+        if (slot.id !== fromSlotId && !slot.player && !slot.preset) {
+            return slot.id;
+        }
+    }
+
+    return null;
+}
+
+function isFormationCode(value: unknown): value is FormationCode {
+    return typeof value === 'string' && getFormation(value) !== undefined;
+}
+
+function readLastFormation(): FormationCode | null {
+    try {
+        const stored = window.localStorage.getItem(LAST_FORMATION_STORAGE_KEY);
+
+        return isFormationCode(stored) ? stored : null;
+    } catch {
+        return null;
+    }
+}
+
+function writeLastFormation(code: FormationCode): void {
+    try {
+        window.localStorage.setItem(LAST_FORMATION_STORAGE_KEY, code);
+    } catch {
+        // Blocked storage: the home card just won't offer a quick replay.
+    }
+}
+
+// POST /api/pick is new (DAILY2_SPEC §3.4). A tab or app build talking to a
+// server that predates it (mid-deploy) gets a 404; from then on this session
+// goes straight to the old reveal + draw + win-odds routes.
+let pickRouteMissing = false;
+
+// Tests only.
+export function resetPickRouteForTests(): void {
+    pickRouteMissing = false;
 }
 
 function createInitialState(formationCode: FormationCode): GameState {
@@ -270,7 +363,27 @@ export function useGame() {
     // True while a /api/hint request is in flight, so a double tap can't
     // spend two hints (or two boosts) on the same candidates.
     const isHinting = useState<boolean>('exact-xi-hinting', () => false);
+    // The last Classic formation started (see LAST_FORMATION_STORAGE_KEY).
+    // Null during SSR and until mounted, so server and client render alike.
+    const lastFormation = useState<FormationCode | null>('exact-xi-last-formation', () => null);
+    // `${gameId}:${slotId}` of a slot whose options /api/pick drew ahead and
+    // that hasn't been opened yet (only for slot_draw vs slot_reopen events).
+    const prefetchedSlots = useState<string[]>('exact-xi-prefetched-slots', () => []);
     const purchases = usePurchases();
+    const daily = useDaily();
+    const isDailyV2Active = computed(() => isDailyV2(state.value));
+
+    function loadLastFormation(): void {
+        lastFormation.value = readLastFormation();
+    }
+
+    if (import.meta.client && lastFormation.value === null) {
+        if (getCurrentInstance()) {
+            onMounted(loadLastFormation);
+        } else {
+            loadLastFormation();
+        }
+    }
 
     function rerollStateFor(game: GameState | null): PowerUpState {
         if (!game || game.status !== 'playing') {
@@ -302,8 +415,17 @@ export function useGame() {
         return { reason: extraReason(game, purchases.isPro.value, purchases.boostBank.value), freeLeft: 0 };
     }
 
-    const canReroll = computed(() => rerollStateFor(state.value));
-    const canHint = computed(() => hintStateFor(state.value));
+    // A Daily 2.0 game maps its own reroll onto the same PowerUpState the
+    // choice sheet already reads ('free' while unused, else 'none'); its
+    // clue replaces the hint, so the old hint button is simply off there.
+    function daily2RerollState(): PowerUpState {
+        const reroll = daily.canReroll.value;
+
+        return reroll.available ? { reason: 'free', freeLeft: 1 } : { reason: 'none', freeLeft: 0 };
+    }
+
+    const canReroll = computed(() => (isDailyV2(state.value) ? daily2RerollState() : rerollStateFor(state.value)));
+    const canHint = computed(() => (isDailyV2(state.value) ? { reason: 'none' as const, freeLeft: 0 } : hintStateFor(state.value)));
 
     // Pays for a reroll/hint beyond the free one, after its request has
     // succeeded (a network drop costs nothing): a banked boost, or Pro
@@ -337,6 +459,12 @@ export function useGame() {
         }
 
         const game = state.value;
+
+        // A Daily 2.0 game's odds come back with each pick/action (they're
+        // counted over its fixed options, which /api/win-odds can't know).
+        if (isDailyV2(game)) {
+            return;
+        }
 
         if (!game || game.status !== 'playing') {
             winOdds.value = null;
@@ -374,8 +502,23 @@ export function useGame() {
     function startGame(formationCode: FormationCode): void {
         state.value = createInitialState(formationCode);
         writePersistedGame(state.value);
+        lastFormation.value = formationCode;
+        writeLastFormation(formationCode);
         trackEvent('game_start', { formation: formationCode, target: state.value.target });
         void refreshWinOdds();
+    }
+
+    // The result screen's "Same formation again": a fresh Classic game on the
+    // formation just played (whatever mode that game was).
+    function replaySameFormation(): void {
+        const formationCode = state.value?.formationCode ?? lastFormation.value;
+
+        if (!formationCode) {
+            return;
+        }
+
+        trackEvent('quick_replay', { formation: formationCode });
+        startGame(formationCode);
     }
 
     function startDailyGame(payload: DailyChallengePayload): void {
@@ -487,6 +630,8 @@ export function useGame() {
                     objectiveKind: objective.kind,
                     objectiveValue: objective.value,
                     total: game.total,
+                    // App: 30-minute tokens (DAILY2_SPEC §3.9); the web keeps 5.
+                    ...(isAppBuild() ? { long: 1 } : {}),
                 },
             });
 
@@ -527,6 +672,12 @@ export function useGame() {
     async function openSlot(slotId: string): Promise<void> {
         const game = state.value;
 
+        if (isDailyV2(game)) {
+            daily.openSlot(slotId);
+
+            return;
+        }
+
         if (!game || game.status !== 'playing' || isDrawing.value) {
             return;
         }
@@ -547,7 +698,17 @@ export function useGame() {
             game.offeredPlayers = previous;
             drawError.value = false;
             writePersistedGame(game);
-            trackEvent('slot_reopen', { position: slot.group, formation: game.formationCode });
+
+            // A slot drawn ahead by /api/pick is opening for the first time:
+            // still a draw for analytics, not a reopen.
+            const drawnAhead = prefetchedSlots.value.includes(`${game.gameId}:${slotId}`);
+
+            if (drawnAhead) {
+                prefetchedSlots.value = prefetchedSlots.value.filter((key) => key !== `${game.gameId}:${slotId}`);
+                trackEvent('slot_draw', { position: slot.group, formation: game.formationCode, prefetched: true });
+            } else {
+                trackEvent('slot_reopen', { position: slot.group, formation: game.formationCode });
+            }
 
             return;
         }
@@ -583,7 +744,11 @@ export function useGame() {
         try {
             const fresh = await apiFetch<RefreshedToken[]>('/api/refresh-tokens', {
                 method: 'POST',
-                body: { gameId: game.gameId, tokens: game.offeredPlayers.map((candidate) => candidate.token) },
+                body: {
+                    gameId: game.gameId,
+                    tokens: game.offeredPlayers.map((candidate) => candidate.token),
+                    ...(isAppBuild() ? { long: true } : {}),
+                },
             });
             const byId = new Map(fresh.map((entry) => [entry.id, entry.token]));
 
@@ -615,6 +780,10 @@ export function useGame() {
     // rerolled — with canReroll.reason 'shop', the caller opens the shop.
     async function useReroll(): Promise<boolean> {
         const game = state.value;
+
+        if (isDailyV2(game)) {
+            return daily.useReroll();
+        }
 
         // Not while a hint is in flight: it would land on candidates this
         // reroll is replacing (and a paid hint would be wasted).
@@ -664,6 +833,11 @@ export function useGame() {
     // the only use for nothing learned.
     async function useHint(): Promise<string | null> {
         const game = state.value;
+
+        // The Daily 2.0 clue replaces the hint (useDaily().useClue).
+        if (isDailyV2(game)) {
+            return null;
+        }
 
         if (!game || game.status !== 'playing' || isHintLocked() || !game.activeSlotId || isDrawing.value || isHinting.value) {
             return null;
@@ -739,28 +913,10 @@ export function useGame() {
         return result.ruledOutId;
     }
 
-    async function pickPlayer(chosen: DrawnPlayer): Promise<RevealResult | 'timeout' | null> {
-        const game = state.value;
-
-        if (!game || game.status !== 'playing' || !game.activeSlotId || isDrawing.value) {
-            return null;
-        }
-
-        const slot = findSlot(game, game.activeSlotId);
-
-        if (!slot || slot.player) {
-            return null;
-        }
-
-        // D2: goals/assists only ever arrive here, after a pick — never in the
-        // draw response. reveal itself re-checks (server-side) that `chosen`
-        // was genuinely offered in this game before returning anything.
-        // Caught rather than left to reject: a network drop or edge error
-        // here used to leave PlayerChoiceDialog's `revealing` flag stuck
-        // true forever, permanently disabling every option with no
-        // indication anything had gone wrong.
-        let result: RevealResult;
-
+    // The old three-request pick: /api/reveal (re-signing an expired token
+    // once through /api/refresh-tokens), then the next draw and the odds
+    // separately. Used when the server predates /api/pick.
+    async function revealViaLegacyRoutes(game: GameState, slot: GameSlot, chosen: DrawnPlayer): Promise<RevealResult | 'timeout' | null> {
         const requestReveal = () => {
             // Looked up fresh each time: refreshOfferTokens() may have just
             // replaced this candidate's token.
@@ -773,12 +929,12 @@ export function useGame() {
         };
 
         try {
-            result = await requestReveal();
+            return await requestReveal();
         } catch (error) {
             // 410 means the anti-peek token itself expired — a player who sat
-            // on this pick past its 5-minute TTL (or reopened a slot drawn
-            // earlier), not tampering. The same candidates get re-signed and
-            // the reveal retried once, invisibly.
+            // on this pick past its TTL (or reopened a slot drawn earlier),
+            // not tampering. The same candidates get re-signed and the reveal
+            // retried once, invisibly.
             if (apiErrorStatus(error) !== 410) {
                 return null;
             }
@@ -796,15 +952,157 @@ export function useGame() {
                 // again" message over the new candidates.
                 forgetSlotOffers(game, slot.id);
                 await drawForSlot(slot.id);
+                trackEvent('options_redrawn', { position: slot.group, mode: gameMode(game) });
 
                 return 'timeout';
             }
 
             try {
-                result = await requestReveal();
+                return await requestReveal();
             } catch (retryError) {
                 return apiErrorStatus(retryError) === 410 ? 'timeout' : null;
             }
+        }
+    }
+
+    function rememberOffered(game: GameState, candidates: DrawnPlayer[]): void {
+        const seen = new Set(game.offeredPlayerIds);
+
+        for (const candidate of candidates) {
+            seen.add(candidate.id);
+        }
+
+        game.offeredPlayerIds = [...seen];
+    }
+
+    // "Draw ahead": the slot /api/pick should draw options for while the
+    // reveal animates — the next empty slot, unless it already has options.
+    function prefetchTarget(game: GameState, slot: GameSlot): { slotId: string; group: PositionGroup } | null {
+        const nextId = nextEmptySlotIn(game, slot.id);
+        const next = nextId ? findSlot(game, nextId) : undefined;
+
+        if (!next || (game.offeredBySlot?.[next.id]?.length ?? 0) > 0) {
+            return null;
+        }
+
+        return { slotId: next.id, group: next.group };
+    }
+
+    type PickRouteOutcome =
+        | { kind: 'ok'; reveal: RevealResult; next: ClassicPickResponse['next']; winOdds: WinOdds | null }
+        | { kind: 'timeout' }
+        | { kind: 'failed' }
+        | { kind: 'missing' };
+
+    // POST /api/pick (DAILY2_SPEC §3.4): reveal + the next slot's options +
+    // fresh odds in one round trip. A token past even the 24-hour re-sign
+    // window comes back as 'expired' with a free fresh three for this slot.
+    async function revealViaPickRoute(game: GameState, slot: GameSlot, chosen: DrawnPlayer): Promise<PickRouteOutcome> {
+        const objective = game.objective ?? { kind: 'exact' as const, value: game.target, label: 'Target' };
+        const token = game.offeredPlayers.find((candidate) => candidate.id === chosen.id)?.token ?? chosen.token;
+        const next = prefetchTarget(game, slot);
+        const body: ClassicPickRequest = {
+            mode: 'classic',
+            gameId: game.gameId,
+            token,
+            group: slot.group,
+            total: game.total,
+            objectiveKind: objective.kind,
+            objectiveValue: objective.value,
+            exclude: game.offeredPlayerIds,
+            openAfter: game.slots.filter((candidate) => !candidate.player && candidate.id !== slot.id).map((candidate) => candidate.group),
+            next,
+            ...(isAppBuild() ? { long: true } : {}),
+        };
+
+        let response: ClassicPickResponse;
+
+        try {
+            response = await apiFetch<ClassicPickResponse>('/api/pick', { method: 'POST', body });
+        } catch (error) {
+            const status = apiErrorStatus(error);
+
+            if (status === 404) {
+                pickRouteMissing = true;
+
+                return { kind: 'missing' };
+            }
+
+            // A 400 here is the combined request tripping a cap the plain
+            // reveal doesn't have (e.g. more than 60 offered ids after many
+            // rerolls): the old routes can still reveal this pick.
+            return status === 400 ? { kind: 'missing' } : { kind: 'failed' };
+        }
+
+        if (response.status === 'expired') {
+            const candidates = response.redraw?.candidates ?? [];
+
+            if (candidates.length === 0) {
+                return { kind: 'failed' };
+            }
+
+            game.offeredPlayers = candidates;
+            game.offeredBySlot = { ...game.offeredBySlot, [slot.id]: candidates };
+            clearRuledOut(game, slot.id);
+            rememberOffered(game, candidates);
+            writePersistedGame(game);
+            trackEvent('options_redrawn', { position: slot.group, mode: gameMode(game) });
+
+            return { kind: 'timeout' };
+        }
+
+        if (!response.reveal) {
+            return { kind: 'failed' };
+        }
+
+        return { kind: 'ok', reveal: response.reveal, next: response.next ?? null, winOdds: response.winOdds ?? null };
+    }
+
+    async function pickPlayer(chosen: DrawnPlayer): Promise<RevealResult | 'timeout' | null> {
+        const game = state.value;
+
+        if (isDailyV2(game)) {
+            return daily.pickPlayer(chosen);
+        }
+
+        if (!game || game.status !== 'playing' || !game.activeSlotId || isDrawing.value) {
+            return null;
+        }
+
+        const slot = findSlot(game, game.activeSlotId);
+
+        if (!slot || slot.player) {
+            return null;
+        }
+
+        // D2: goals/assists only ever arrive here, after a pick — never in the
+        // draw response. The server re-checks (from the signed token) that
+        // `chosen` was genuinely offered in this game before returning
+        // anything. Failures resolve null rather than rejecting: a network
+        // drop here used to leave PlayerChoiceDialog's `revealing` flag stuck
+        // true forever.
+        let result: RevealResult;
+        let prefetched: ClassicPickResponse['next'] = null;
+        let odds: WinOdds | null | undefined;
+
+        const viaPick = pickRouteMissing ? ({ kind: 'missing' } as const) : await revealViaPickRoute(game, slot, chosen);
+
+        if (viaPick.kind === 'ok') {
+            result = viaPick.reveal;
+            prefetched = viaPick.next;
+            odds = viaPick.winOdds;
+        } else if (viaPick.kind === 'timeout') {
+            return 'timeout';
+        } else if (viaPick.kind === 'failed') {
+            return null;
+        } else {
+            const legacy = await revealViaLegacyRoutes(game, slot, chosen);
+
+            if (legacy === null || legacy === 'timeout') {
+                return legacy;
+            }
+
+            result = legacy;
         }
 
         const player: Player = {
@@ -825,7 +1123,7 @@ export function useGame() {
 
         // Deliberately NOT clearing activeSlotId/offeredPlayers here: the
         // dialog stays mounted (and modal) through its own reveal count-up
-        // animation, then calls closeDialog() itself once that's done.
+        // animation, then calls closeDialog() (or openNextSlot()) itself.
         const pickedPlayers = game.slots
             .map((candidate) => candidate.player)
             .filter((candidate): candidate is Player => candidate !== null);
@@ -838,6 +1136,17 @@ export function useGame() {
 
         game.status = outcome.status;
         game.tier = outcome.tier;
+
+        // Draw ahead: the next slot's options arrived with the reveal, so the
+        // sheet can open on them the moment the animation ends. Only kept
+        // while the game goes on, and only for a slot that's still empty.
+        const nextSlot = prefetched ? findSlot(game, prefetched.slotId) : undefined;
+
+        if (prefetched && nextSlot && !nextSlot.player && outcome.status === 'playing' && prefetched.candidates.length > 0) {
+            game.offeredBySlot = { ...game.offeredBySlot, [nextSlot.id]: prefetched.candidates };
+            rememberOffered(game, prefetched.candidates);
+            prefetchedSlots.value = [`${game.gameId}:${nextSlot.id}`];
+        }
 
         // No-ops on the website (see app/utils/haptics.ts).
         if (outcome.status === 'won') {
@@ -861,6 +1170,7 @@ export function useGame() {
                     objective: game.objective.kind,
                     status: outcome.status,
                     total: game.total,
+                    daily_version: 1,
                 });
             } else if (game.objective) {
                 // A custom challenge is a one-off the creator configured
@@ -895,15 +1205,61 @@ export function useGame() {
         }
 
         writePersistedGame(game);
-        void refreshWinOdds();
+
+        if (odds !== undefined) {
+            // /api/pick already answered with the odds for what's left
+            // (null below MIN_FILLED_FOR_WIN_ODDS filled, or once it's over).
+            winOdds.value = game.status === 'playing' ? odds : null;
+        } else {
+            void refreshWinOdds();
+        }
 
         return result;
+    }
+
+    // The next empty, non-locked slot after `fromSlotId` (formation order,
+    // wrapping), for auto-advance after a reveal. See nextEmptySlotIn.
+    function nextEmptySlotId(fromSlotId?: string): string | null {
+        return state.value ? nextEmptySlotIn(state.value, fromSlotId) : null;
+    }
+
+    // One-handed picking: called by the choice sheet once a reveal has
+    // finished animating, instead of closeDialog(). Moves straight on to the
+    // next empty slot — instantly when its options were drawn ahead (Classic)
+    // or are fixed (Daily 2.0), otherwise with an ordinary draw. Just closes
+    // the sheet once the game is over or nothing is left to fill.
+    async function openNextSlot(): Promise<void> {
+        const game = state.value;
+
+        if (!game) {
+            return;
+        }
+
+        const from = game.activeSlotId;
+
+        closeDialog();
+
+        if (game.status !== 'playing' || (isDailyV2(game) && daily.pendingBust.value)) {
+            return;
+        }
+
+        const nextId = nextEmptySlotIn(game, from);
+
+        if (nextId) {
+            await openSlot(nextId);
+        }
     }
 
     function closeDialog(): void {
         const game = state.value;
 
         if (!game) {
+            return;
+        }
+
+        if (isDailyV2(game)) {
+            daily.closeDialog();
+
             return;
         }
 
@@ -949,5 +1305,11 @@ export function useGame() {
         isHintLocked,
         closeDialog,
         reset,
+        nextEmptySlotId,
+        openNextSlot,
+        replaySameFormation,
+        lastFormation,
+        loadLastFormation,
+        isDailyV2: isDailyV2Active,
     };
 }

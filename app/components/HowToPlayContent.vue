@@ -5,26 +5,41 @@
 //
 // Laid out as short, scannable sections rather than one long numbered list —
 // most people read this on a phone, mid-game, looking for one specific rule.
-import type { ResultTier } from '../../shared/types';
+import { DAILY_POINTS, DAILY_SCHEDULE } from '#shared/daily2-rules';
+import { titleWindowFor } from '#shared/classic';
+import { weekScheduleRows } from '../utils/daily-screens';
+import { formations } from '../utils/formations';
 import { TIER_BOUNDARIES } from '../utils/scoring';
+import { TIER_COPY } from '../utils/tier-copy';
 
-const TIER_LABELS: Record<ResultTier, string> = {
-    championsLeague: 'Champions League',
-    europaLeague: 'Europa League',
-    midTable: 'Mid-table',
-    avoidedRelegation: 'Avoided relegation',
-    relegated: 'Relegated',
-};
+// The Title winners window scales with the target (1.5% of it), so its
+// range is shown across every formation ("within 5–8").
+const windows = formations.map((formation) => titleWindowFor(formation.target));
+const titleRange = `within ${Math.min(...windows)}–${Math.max(...windows)}`;
 
 // Built from scoring.ts's own boundaries so the ladder shown here can never
 // drift from what the game actually awards.
-const ladder = TIER_BOUNDARIES.map((boundary, index) => ({
-    tier: boundary.tier,
-    label: TIER_LABELS[boundary.tier],
-    range: Number.isFinite(boundary.maxDistance)
-        ? `within ${boundary.maxDistance}`
-        : `over ${TIER_BOUNDARIES[index - 1]?.maxDistance ?? 0}`,
-}));
+const ladder = [
+    { tier: 'titleWinners' as const, label: TIER_COPY.titleWinners.label, range: titleRange },
+    ...TIER_BOUNDARIES.map((boundary, index) => ({
+        tier: boundary.tier,
+        label: TIER_COPY[boundary.tier].label,
+        range: Number.isFinite(boundary.maxDistance)
+            ? `within ${boundary.maxDistance}`
+            : `over ${TIER_BOUNDARIES[index - 1]?.maxDistance ?? 0}`,
+    })),
+];
+
+const schedule = weekScheduleRows(DAILY_SCHEDULE);
+
+const points = [
+    { label: 'Win', value: `${DAILY_POINTS.win.toLocaleString('en-GB')}, minus any help used` },
+    { label: 'Reroll', value: `−${DAILY_POINTS.reroll}` },
+    { label: 'Scouting clue', value: `−${DAILY_POINTS.clue}` },
+    { label: 'Bench', value: `−${DAILY_POINTS.bench}` },
+    { label: 'Miss', value: `up to ${DAILY_POINTS.missMax} by how close (never below ${DAILY_POINTS.missFloor})` },
+    { label: 'Bust', value: `${DAILY_POINTS.bustPerSlot} per slot filled before it` },
+];
 </script>
 
 <template>
@@ -68,7 +83,10 @@ const ladder = TIER_BOUNDARIES.map((boundary, index) => ({
                     <span><strong>Bust</strong> — game over on the spot.</span>
                 </li>
             </ul>
-            <p class="how-to-play-content__note">Finish under the target and you land on the table instead:</p>
+            <p class="how-to-play-content__note">
+                Finish under the target and you land on the table instead. Title winners is a few off the
+                target (1.5% of it), so it scales with the formation:
+            </p>
             <ol class="how-to-play-content__ladder">
                 <li
                     v-for="row in ladder"
@@ -96,12 +114,50 @@ const ladder = TIER_BOUNDARIES.map((boundary, index) => ({
             </div>
         </section>
 
-        <section class="how-to-play-content__section how-to-play-content__section--callout">
-            <h3 class="how-to-play-content__heading">Daily &amp; challenge boards</h3>
+        <section class="how-to-play-content__section">
+            <h3 class="how-to-play-content__heading">The Daily</h3>
             <p>
-                These can swap the exact target for a different objective — <strong>score over</strong>
+                <strong>Same options for everyone</strong>, new at midnight UK time. A few players start locked in;
+                each other slot has 3 fixed options. Your first go each day counts for the table: you'll see
+                what percentage of players you beat.
+            </p>
+            <ul class="how-to-play-content__daily-rules">
+                <li><strong>Captain.</strong> Name one before your last pick: their number counts double. Name an empty slot for a blind captain, or a revealed player for safety. Once named, it's locked.</li>
+                <li><strong>Bench.</strong> Once a game, take one of your players off for a mystery sub (same position, similar numbers). Use it straight after a bust to get back in it.</li>
+                <li><strong>Scouting clue.</strong> Shows one option's range (0–10, 11–30, 31–60, 61–100 or 100+). Locks when fewer than 3 slots are open.</li>
+                <li><strong>Reroll.</strong> Swap one slot's 3 options for a fixed second three.</li>
+                <li><strong>Streak.</strong> Counts the days you play, win or not. Wins in a row are tracked separately.</li>
+                <li><strong>Share grid.</strong> One square per player, no names. Each square shows whether your pick was the best, middle or worst of the 3 you were offered.</li>
+            </ul>
+        </section>
+
+        <section class="how-to-play-content__section">
+            <h3 class="how-to-play-content__heading">Daily points (out of 1,000)</h3>
+            <dl class="how-to-play-content__points">
+                <div v-for="row in points" :key="row.label" class="how-to-play-content__point">
+                    <dt>{{ row.label }}</dt>
+                    <dd>{{ row.value }}</dd>
+                </div>
+            </dl>
+            <p class="how-to-play-content__note">Any win beats any miss, and any finished XI beats a bust.</p>
+        </section>
+
+        <section class="how-to-play-content__section">
+            <h3 class="how-to-play-content__heading">The Daily week</h3>
+            <ol class="how-to-play-content__ladder">
+                <li v-for="row in schedule" :key="row.weekday" class="how-to-play-content__rung how-to-play-content__rung--day">
+                    <span class="how-to-play-content__day">{{ row.day }}</span>
+                    <span>{{ row.label }}</span>
+                </li>
+            </ol>
+            <p class="how-to-play-content__note">Formations rotate too, so no two weeks are the same. Over and under days end early or bust on the spot; read the top of the board first.</p>
+        </section>
+
+        <section class="how-to-play-content__section how-to-play-content__section--callout">
+            <h3 class="how-to-play-content__heading">Challenge boards</h3>
+            <p>
+                A mate's board can swap the exact target for a different objective: <strong>score over</strong>
                 it, <strong>stay under</strong> it, or <strong>keep every player under</strong> it.
-                Check the top of the board first; busting on the spot only applies to exact targets.
             </p>
         </section>
     </div>
@@ -295,6 +351,61 @@ const ladder = TIER_BOUNDARIES.map((boundary, index) => ({
 
 // The shared --tier-* ladder from app.vue, so this matches StatsDialog and
 // ResultPanel.
+.how-to-play-content__rung--titleWinners {
+    --rung-color: var(--tier-title);
+}
+
+// The week table reuses the ladder rows, without the tier dot.
+.how-to-play-content__rung--day::before {
+    display: none;
+}
+
+.how-to-play-content__day {
+    color: var(--color-primary);
+    flex: 0 0 2.5rem;
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.how-to-play-content__daily-rules {
+    display: flex;
+    flex-direction: column;
+    font-size: 0.88rem;
+    gap: 0.45rem;
+    margin: 0;
+    padding-left: 1.1rem;
+}
+
+.how-to-play-content__points {
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-md);
+    margin: 0;
+    overflow: hidden;
+}
+
+.how-to-play-content__point {
+    display: flex;
+    font-size: 0.85rem;
+    gap: 0.75rem;
+    justify-content: space-between;
+    padding: 0.45rem 0.75rem;
+
+    dt {
+        font-weight: 700;
+    }
+
+    dd {
+        color: var(--color-muted);
+        margin: 0;
+        text-align: right;
+    }
+}
+
+.how-to-play-content__point + .how-to-play-content__point {
+    border-top: 1px solid var(--color-line);
+}
+
 .how-to-play-content__rung--championsLeague {
     --rung-color: var(--tier-cl);
 }

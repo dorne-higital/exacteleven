@@ -1,7 +1,73 @@
 <script setup lang="ts">
+import { DAILY2_STORAGE_KEY, readDaily2Persisted } from '../composables/useDaily';
 import { trackEvent } from '../utils/analytics';
+import { fetchAppConfig } from '../utils/app-config';
+import { formatPoints } from '../utils/daily-screens';
+import { formationLabel } from '../utils/share-daily';
+import { resolveDailyDate } from '../utils/trusted-date';
 
-const { stats } = useStats();
+const { stats, currentDailyStreak } = useStats();
+const { lastFormation } = useGame();
+const { recapAvailable } = useDaily();
+
+// Today's Daily on the card: "Play today's Daily", "Carry on…" for one in
+// progress, or the finished score ("812 · beat 74%"). Client-only (the date
+// comes from the server's UK clock, the state from this device's storage).
+const dailyToday = ref<string | null>(null);
+const dailyInProgress = ref(false);
+// lastFormation / the recap come from this device's storage and clock, so
+// they only render after hydration (no SSR mismatch).
+const mounted = ref(false);
+const replayFormation = computed(() => (mounted.value ? lastFormation.value : null));
+const showRecap = computed(() => (mounted.value ? recapAvailable.value : null));
+
+onMounted(async () => {
+    mounted.value = true;
+
+    const date = resolveDailyDate(await fetchAppConfig());
+
+    dailyToday.value = date;
+
+    const saved = readDaily2Persisted(DAILY2_STORAGE_KEY, date);
+
+    dailyInProgress.value = !!saved && saved.date === date && saved.game.status === 'playing';
+});
+
+const todayScore = computed(() => {
+    const date = dailyToday.value;
+
+    if (!date || stats.value.lastDailyResultDate !== date) {
+        return null;
+    }
+
+    const entry = stats.value.dailyScores.find((candidate) => candidate.date === date);
+
+    if (!entry) {
+        return 'Played today';
+    }
+
+    return typeof entry.beatPct === 'number' ? `${formatPoints(entry.score)} · beat ${entry.beatPct}%` : formatPoints(entry.score);
+});
+
+const dailyTitle = computed(() => {
+    if (todayScore.value) {
+        return todayScore.value;
+    }
+
+    return dailyInProgress.value ? 'Carry on' : 'Play today\'s Daily';
+});
+
+const playedStreak = computed(() => (dailyToday.value ? currentDailyStreak(dailyToday.value) : stats.value.dailyStreak));
+
+function selectLastFormation(): void {
+    if (lastFormation.value) {
+        trackEvent('play_last_formation', { formation: lastFormation.value });
+    }
+}
+
+function selectRecap(): void {
+    trackEvent('open_weekly_recap', { source: 'home' });
+}
 
 const STEPS = [
     { number: '1', title: 'Pick a formation', detail: 'Its digits become your target.' },
@@ -100,7 +166,21 @@ usePageSeoMeta({
                     </li>
                 </ul>
 
-                <NuxtLink class="board__cta" to="/select-formation" @click="selectPlay">
+                <NuxtLink
+                    v-if="replayFormation"
+                    class="board__cta"
+                    :to="{ path: '/play', query: { f: replayFormation } }"
+                    @click="selectLastFormation"
+                >
+                    Play {{ formationLabel(replayFormation) }} again
+                    <AppIcon name="forward" />
+                </NuxtLink>
+                <NuxtLink
+                    class="board__cta"
+                    :class="{ 'board__cta--quiet': replayFormation }"
+                    to="/select-formation"
+                    @click="selectPlay"
+                >
                     Pick a formation
                     <AppIcon name="forward" />
                 </NuxtLink>
@@ -112,10 +192,10 @@ usePageSeoMeta({
                         <span class="mode-card__label">Daily</span>
                         <AppIcon class="mode-card__icon" name="calendar" />
                     </span>
-                    <span class="mode-card__title">Today's board</span>
-                    <span class="mode-card__detail">A new twist every day.</span>
+                    <span class="mode-card__title">{{ dailyTitle }}</span>
+                    <span class="mode-card__detail">{{ todayScore ? 'Next Daily at midnight UK time.' : 'Same puzzle for everyone today.' }}</span>
                     <span class="mode-card__streak">
-                        <DailyStreakStrip compact :results="stats.dailyResults" :streak="stats.dailyStreak" />
+                        <DailyStreakStrip compact :results="stats.dailyResults" :streak="playedStreak" />
                     </span>
                 </NuxtLink>
 
@@ -128,6 +208,17 @@ usePageSeoMeta({
                     <span class="mode-card__detail">Build a board for a friend.</span>
                 </button>
             </div>
+
+            <NuxtLink
+                v-if="showRecap"
+                class="home__recap"
+                :to="{ path: '/daily', query: { recap: '1' } }"
+                @click="selectRecap"
+            >
+                <span class="home__recap-label">Daily recap</span>
+                <span class="home__recap-title">{{ showRecap === 'thisWeek' ? 'Your week' : 'Last week' }}: scores vs everyone</span>
+                <AppIcon name="forward" />
+            </NuxtLink>
 
             <section aria-labelledby="home-steps-title" class="home__section">
                 <h2 id="home-steps-title" class="home__section-label">How it works</h2>
@@ -327,6 +418,16 @@ usePageSeoMeta({
     transition: filter 0.15s ease;
 }
 
+// With a remembered formation, "Play 4-3-3 again" takes the red CTA and the
+// picker drops to a quiet outline beside it.
+.board__cta--quiet {
+    background-color: transparent;
+    border: 1px solid var(--color-pitch-line);
+    color: var(--color-pitch-ink);
+    margin-top: 0.4rem;
+    min-height: var(--tap-min);
+}
+
 .board__cta:hover {
     filter: brightness(1.06);
 }
@@ -415,6 +516,45 @@ usePageSeoMeta({
 
 .mode-card__streak:empty {
     display: none;
+}
+
+// ---- Sunday / Monday recap entry ------------------------------------
+.home__recap {
+    align-items: center;
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-card);
+    color: var(--color-foreground);
+    display: grid;
+    gap: 0.1rem 0.75rem;
+    grid-template-columns: 1fr auto;
+    min-height: var(--tap-min);
+    padding: 0.7rem 0.9rem;
+    text-decoration: none;
+
+    // AppIcon's root <svg> carries this page's scope attribute.
+    svg {
+        color: var(--color-primary);
+        grid-column: 2;
+        grid-row: 1 / span 2;
+    }
+}
+
+.home__recap:hover {
+    border-color: var(--color-primary);
+}
+
+.home__recap-label {
+    color: var(--color-muted);
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+
+.home__recap-title {
+    font-size: 0.92rem;
+    font-weight: 700;
 }
 
 // ---- How it works -------------------------------------------------

@@ -1,14 +1,17 @@
 <script setup lang="ts">
 import type { DrawnPlayer, PositionGroup } from '../../shared/types';
+import { dayStatValue } from '#shared/daily2-rules';
 import { gameMode } from '../composables/useGame';
 import { trackEvent } from '../utils/analytics';
+import { clueChipText } from '../utils/daily-screens';
 import { describeSlotRole } from '../utils/formations';
 import { isAppBuild } from '../utils/platform';
 import { powerUpButton, powerUpNote } from '../utils/power-ups';
 import type { PowerUpKind } from '../utils/power-ups';
 import { classifyReveal, pickFlavorLine } from '../utils/reveal-flavor';
 
-const { state, isDrawing, pickPlayer, useReroll, useHint, closeDialog, canReroll, canHint } = useGame();
+const { state, isDrawing, pickPlayer, useReroll, useHint, closeDialog, canReroll, canHint, openNextSlot, isDailyV2 } = useGame();
+const daily = useDaily();
 const { boostBank } = usePurchases();
 const { openShop } = useShop();
 
@@ -20,7 +23,126 @@ const candidates = computed(() => state.value?.offeredPlayers ?? []);
 const mode = computed(() => (state.value ? gameMode(state.value) : null));
 const rerollButton = computed(() => powerUpButton('reroll', canReroll.value, boostBank.value));
 const hintButton = computed(() => powerUpButton('hint', canHint.value, boostBank.value));
-const powerUpHelp = computed(() => powerUpNote(mode.value, isAppBuild(), canReroll.value, canHint.value));
+const powerUpHelp = computed(() => (isDailyV2.value ? null : powerUpNote(mode.value, isAppBuild(), canReroll.value, canHint.value)));
+
+// ---- Daily 2.0 (DAILY2_SPEC §6.2–6.4) ----------------------------------
+// The Daily's sheet swaps Reroll/Hint for "Reroll −50" / "Scouting clue
+// −50" and adds "Make captain" (a blind captain on this slot). The last pick
+// is gated behind naming a captain.
+const dailyStat = computed(() => daily.puzzle.value?.objective.stat ?? 'ga');
+const isCaptainSlot = computed(() => isDailyV2.value && !!state.value?.activeSlotId && daily.captainSlotId.value === state.value.activeSlotId);
+const clueMode = ref(false);
+const clueLoading = ref(false);
+const captainSheetOpen = ref(false);
+const captainLoading = ref(false);
+// The scouting report for one of THIS slot's options, if the clue was spent here.
+const clueHere = computed(() => {
+    const clue = daily.run.value?.clue;
+
+    return clue && clue.slotId === state.value?.activeSlotId ? clue : null;
+});
+const dailyRerollLabel = computed(() => (daily.canReroll.value.reason === 'used' ? 'Reroll used' : 'Reroll −50'));
+const dailyClueLabel = computed(() => (daily.canClue.value.reason === 'used' ? 'Clue used' : 'Scouting clue −50'));
+const dailyNote = computed(() => {
+    if (clueMode.value) {
+        return null;
+    }
+
+    if (daily.canClue.value.reason === 'locked') {
+        return 'Clues lock when fewer than 3 slots are open';
+    }
+
+    return null;
+});
+const DAILY_ERROR_COPY: Partial<Record<string, string>> = {
+    captain_required: 'Name your captain before your last pick.',
+    captain_set: 'Your captain is already named.',
+    captain_would_bust: 'That captain would bust you.',
+    clue_locked: 'Clues lock when fewer than 3 slots are open',
+    clue_used: 'Your scouting clue is already spent.',
+    reroll_used: 'Your reroll is already spent.',
+    pending_bust: 'Sort out the bust first.',
+    game_over: 'This Daily is already over.',
+    network: 'Couldn\'t reach the server. Tap again to retry.',
+    not_today: 'This Daily has closed. Today\'s is ready.',
+};
+const dailyErrorText = computed(() => {
+    const code = daily.actionError.value;
+
+    if (!isDailyV2.value || !code) {
+        return null;
+    }
+
+    return DAILY_ERROR_COPY[code] ?? 'That move isn\'t allowed right now.';
+});
+
+function toggleClueMode(): void {
+    if (!daily.canClue.value.available || revealing.value || clueHere.value) {
+        return;
+    }
+
+    clueMode.value = !clueMode.value;
+
+    if (clueMode.value) {
+        trackEvent('clue_mode_open', { mode: 'daily', slots_left: daily.snapshot.value?.openSlotIds.length ?? 0 });
+    }
+}
+
+async function scout(candidate: DrawnPlayer): Promise<void> {
+    if (clueLoading.value) {
+        return;
+    }
+
+    clueLoading.value = true;
+
+    try {
+        const band = await daily.useClue(candidate.id);
+
+        if (band) {
+            clueMode.value = false;
+            srAnnouncement.value = `${candidate.name}: ${clueChipText(band, dailyStat.value)}`;
+        }
+    } finally {
+        clueLoading.value = false;
+    }
+}
+
+async function makeCaptainHere(): Promise<void> {
+    const slotId = state.value?.activeSlotId;
+
+    if (!slotId || captainLoading.value || daily.captainSlotId.value) {
+        return;
+    }
+
+    captainLoading.value = true;
+
+    try {
+        if (await daily.setCaptain(slotId)) {
+            srAnnouncement.value = 'Blind captain named for this slot.';
+        }
+    } finally {
+        captainLoading.value = false;
+    }
+}
+
+function openCaptainSheet(source: 'gate' | 'picker'): void {
+    captainSheetOpen.value = true;
+    trackEvent('view_captain_sheet', { source });
+}
+
+// Reset the sheet's own state whenever it moves on to another slot (the
+// one-handed auto-advance keeps this component mounted between slots).
+watch(() => state.value?.activeSlotId, (slotId, previous) => {
+    if (slotId && previous && slotId !== previous) {
+        revealing.value = false;
+        showResult.value = false;
+        pickError.value = false;
+        pickTimedOut.value = false;
+        revealFlavor.value = null;
+        clueMode.value = false;
+        displayValue.value = 0;
+    }
+});
 
 // boost_bank_empty: once per sheet per kind, the first time a button turns
 // into "Get boosts" (the empty-bank prompt the shop funnel starts from).
@@ -102,6 +224,10 @@ const pickTimedOut = ref(false);
 // A short, non-essential flavor line for a notable reveal (bust/win/cutting
 // it fine) — null on a routine pick, so most reveals stay quick and quiet.
 const revealFlavor = ref<string | null>(null);
+// Daily 2.0: whether the slot just revealed wears the armband (its number
+// counts double), and whether the pick put you over (bench decision pending).
+const revealedCaptain = ref(false);
+const revealedBust = ref(false);
 // Which candidate the player actually tapped — every option shares the same
 // aria-disabled condition while a pick is revealing, so without this all
 // three dim identically and there's no visual confirmation of which one was
@@ -267,6 +393,18 @@ async function handlePick(candidate: DrawnPlayer): Promise<void> {
         return;
     }
 
+    if (isDailyV2.value && clueMode.value) {
+        await scout(candidate);
+
+        return;
+    }
+
+    if (isDailyV2.value && daily.needsCaptain.value) {
+        openCaptainSheet('gate');
+
+        return;
+    }
+
     revealing.value = true;
     revealedName.value = candidate.name;
     displayValue.value = 0;
@@ -294,7 +432,14 @@ async function handlePick(candidate: DrawnPlayer): Promise<void> {
     }
 
     showResult.value = true;
-    await animateCountUp(result.goals + result.assists);
+
+    // The Daily counts only the day's stat (goals, assists or both).
+    const revealedValue = isDailyV2.value ? dayStatValue(result, dailyStat.value) : result.goals + result.assists;
+    const pendingBust = isDailyV2.value && !!daily.pendingBust.value;
+
+    revealedCaptain.value = isCaptainSlot.value;
+    revealedBust.value = pendingBust;
+    await animateCountUp(revealedValue);
 
     // Announced once, after the count-up settles, rather than relying on the
     // rapidly-changing visible number (which is aria-hidden below) or on
@@ -309,8 +454,8 @@ async function handlePick(candidate: DrawnPlayer): Promise<void> {
     // and ResultPanel already carry that context, so this just states the
     // running total.
     srAnnouncement.value = (!objective || objective.kind === 'exact')
-        ? `${revealedName.value}: ${result.goals + result.assists}. Running total ${total} of target ${objective?.value ?? state.value?.target ?? 0}.`
-        : `${revealedName.value}: ${result.goals + result.assists}. Running total ${total}.`;
+        ? `${revealedName.value}: ${revealedValue}. Running total ${total} of target ${objective?.value ?? state.value?.target ?? 0}.`
+        : `${revealedName.value}: ${revealedValue}. Running total ${total}.`;
 
     // Distance from whatever's just been revealed to the relevant ceiling,
     // unified across every objective kind (see reveal-flavor.ts) — 'over'
@@ -325,13 +470,13 @@ async function handlePick(candidate: DrawnPlayer): Promise<void> {
         }
 
         if (objective.kind === 'allUnder') {
-            return objective.value - (result.goals + result.assists);
+            return objective.value - revealedValue * (revealedCaptain.value ? 2 : 1);
         }
 
         return null;
     })();
 
-    const mood = classifyReveal(state.value?.status ?? 'playing', marginToLimit);
+    const mood = classifyReveal(pendingBust ? 'bust' : state.value?.status ?? 'playing', marginToLimit);
 
     revealFlavor.value = mood ? pickFlavorLine(mood) : null;
 
@@ -340,9 +485,20 @@ async function handlePick(candidate: DrawnPlayer): Promise<void> {
     }
 
     window.setTimeout(() => {
-        dialogRef.value?.close();
+        // One-handed picking: straight on to the next empty slot while the
+        // game is still on (instant when its options are already in hand),
+        // otherwise just close — a finished game or a pending bust is
+        // handled on the board.
+        const stillPlaying = state.value?.status === 'playing' && !(isDailyV2.value && daily.pendingBust.value);
+
+        if (stillPlaying && state.value?.slots.some((slot) => !slot.player)) {
+            void openNextSlot();
+        } else {
+            dialogRef.value?.close();
+        }
     }, revealFlavor.value ? 1100 : 500);
 }
+
 
 // Spins the dice icon for the duration of the reroll's network round trip.
 // Tied to isDrawing rather than isScrambling: drawForSlot() (which useReroll
@@ -361,6 +517,24 @@ async function handleReroll(): Promise<void> {
     // useReroll() itself also no-ops when nothing's left, but aria-disabled
     // (unlike the native disabled attribute) doesn't block the click at the
     // DOM level, so check here too for a clean fast path.
+    if (isDailyV2.value) {
+        if (revealing.value || isScrambling.value || !daily.canReroll.value.available) {
+            return;
+        }
+
+        clueMode.value = false;
+        pickError.value = false;
+        rerollSpinning.value = true;
+
+        try {
+            await useReroll();
+        } finally {
+            rerollSpinning.value = false;
+        }
+
+        return;
+    }
+
     if (revealing.value || isDrawing.value || isScrambling.value || rerollButton.value.action === 'none') {
         return;
     }
@@ -428,7 +602,10 @@ function handleBackdropClick(event: MouseEvent): void {
 
         <div class="player-choice__top">
             <h2 :id="titleId" class="player-choice__title">
-                <span class="player-choice__eyebrow">Pick a player</span>
+                <span class="player-choice__eyebrow">
+                    Pick a player
+                    <span v-if="isCaptainSlot" class="player-choice__captain-badge">{{ daily.captainBlind.value ? 'Blind captain' : 'Captain' }} · ×2</span>
+                </span>
                 <span v-if="slotTitle" class="player-choice__slot">{{ slotTitle }}</span>
             </h2>
             <span v-if="toGo !== null && !showResult" class="player-choice__to-go">
@@ -438,7 +615,24 @@ function handleBackdropClick(event: MouseEvent): void {
 
         <p aria-live="polite" class="player-choice__sr-announcement">{{ srAnnouncement }}</p>
 
-        <p v-if="!showResult" class="player-choice__scope-note">{{ positionScopeNote }}</p>
+        <p v-if="!showResult && !clueMode" class="player-choice__scope-note">{{ positionScopeNote }}</p>
+
+        <p v-if="!showResult && clueMode" aria-live="polite" class="player-choice__clue-banner">
+            Tap a player to scout them
+            <button class="player-choice__clue-cancel" type="button" @click="clueMode = false">Cancel</button>
+        </p>
+
+        <div v-if="isDailyV2 && !showResult && daily.needsCaptain.value" class="player-choice__gate">
+            <p>Name your captain before your last pick.</p>
+            <div class="player-choice__gate-actions">
+                <button class="player-choice__gate-primary" :aria-disabled="captainLoading" type="button" @click="makeCaptainHere">
+                    Captain this slot (blind)
+                </button>
+                <button class="player-choice__gate-secondary" type="button" @click="openCaptainSheet('gate')">
+                    Choose from your XI
+                </button>
+            </div>
+        </div>
 
         <ul v-if="!showResult" class="player-choice__list">
             <li v-for="(candidate, index) in candidates" :key="candidate.id">
@@ -446,26 +640,37 @@ function handleBackdropClick(event: MouseEvent): void {
                     class="player-choice__option"
                     :aria-disabled="revealing || isDrawing || isScrambling"
                     :aria-label="settled[index]
-                        ? `${candidate.name} — ${eraLabel(candidate)}${ruledOutId === candidate.id ? ' — Hint: avoid' : ''}`
+                        ? `${clueMode ? 'Scout ' : ''}${candidate.name} — ${eraLabel(candidate)}${ruledOutId === candidate.id ? ' — Hint: avoid' : ''}${clueHere?.playerId === candidate.id ? ` — ${clueChipText(clueHere.band, dailyStat)}` : ''}`
                         : 'Loading option'"
                     :class="{
                         'player-choice__option--picked': pickedId === candidate.id,
                         'player-choice__option--scrambling': !settled[index],
                         'player-choice__option--ruled-out': ruledOutId === candidate.id,
+                        'player-choice__option--scouting': clueMode,
+                        'player-choice__option--scouted': clueHere?.playerId === candidate.id,
                     }"
                     type="button"
                     @click="handlePick(candidate)"
                 >
                     <span aria-hidden="true" class="player-choice__name">{{ displayNames[index] }}</span>
                     <span aria-hidden="true" class="player-choice__meta">{{ displayMeta[index] }}</span>
-                    <!-- The hidden stat: "??" until revealed, or the hint's verdict. -->
-                    <span aria-hidden="true" class="player-choice__peek">{{ ruledOutId === candidate.id ? 'Avoid' : '??' }}</span>
+                    <span v-if="clueHere?.playerId === candidate.id" aria-hidden="true" class="player-choice__clue-chip">
+                        {{ clueChipText(clueHere.band, dailyStat) }}
+                    </span>
+                    <!-- The hidden stat: "??" until revealed, the hint's verdict, or the scouting band. -->
+                    <span aria-hidden="true" class="player-choice__peek">
+                        {{ ruledOutId === candidate.id ? 'Avoid' : clueHere?.playerId === candidate.id ? clueHere.band.label : clueMode ? 'Scout' : '??' }}
+                    </span>
                 </button>
             </li>
         </ul>
 
-        <p v-if="pickTimedOut && !showResult" aria-live="polite" class="player-choice__error">
-            That pick timed out — tap the player again for a fresh one.
+        <p v-if="pickTimedOut && !showResult" aria-live="polite" class="player-choice__note">
+            Those options went stale, so here's a fresh three. No reroll used.
+        </p>
+
+        <p v-else-if="dailyErrorText && !showResult" aria-live="polite" class="player-choice__error">
+            {{ dailyErrorText }}
         </p>
 
         <p v-else-if="pickError && !showResult" aria-live="polite" class="player-choice__error">
@@ -477,15 +682,64 @@ function handleBackdropClick(event: MouseEvent): void {
             class="player-choice__result"
             :class="{
                 'player-choice__result--won': state?.status === 'won',
-                'player-choice__result--bust': state?.status === 'bust',
+                'player-choice__result--bust': state?.status === 'bust' || revealedBust,
             }"
         >
             <p class="player-choice__result-name">{{ revealedName }}</p>
             <p aria-hidden="true" class="player-choice__result-value">{{ displayValue }}</p>
+            <p v-if="revealedCaptain" class="player-choice__result-captain">Captain: counts double ({{ displayValue * 2 }})</p>
             <p v-if="revealFlavor" aria-hidden="true" class="player-choice__result-flavor">{{ revealFlavor }}</p>
         </div>
 
-        <div v-if="!showResult" class="player-choice__actions">
+        <div v-if="!showResult && isDailyV2" class="player-choice__actions player-choice__actions--daily">
+            <button
+                class="player-choice__reroll"
+                :class="{ 'player-choice__reroll--rolling': rerollSpinning }"
+                :aria-disabled="!daily.canReroll.value.available || revealing || isScrambling || daily.busy.value"
+                type="button"
+                @click="handleReroll"
+            >
+                <svg aria-hidden="true" class="player-choice__dice" fill="none" height="18" viewBox="0 0 24 24" width="18">
+                    <rect height="18" rx="4" stroke="currentColor" stroke-width="2" width="18" x="3" y="3" />
+                    <circle cx="8" cy="8" fill="currentColor" r="1.4" />
+                    <circle cx="16" cy="8" fill="currentColor" r="1.4" />
+                    <circle cx="12" cy="12" fill="currentColor" r="1.4" />
+                    <circle cx="8" cy="16" fill="currentColor" r="1.4" />
+                    <circle cx="16" cy="16" fill="currentColor" r="1.4" />
+                </svg>
+                {{ dailyRerollLabel }}
+            </button>
+
+            <button
+                class="player-choice__hint"
+                :class="{ 'player-choice__hint--loading': clueLoading, 'player-choice__hint--on': clueMode }"
+                :aria-disabled="!daily.canClue.value.available || revealing || isScrambling || daily.busy.value || !!clueHere"
+                :aria-pressed="clueMode"
+                type="button"
+                @click="toggleClueMode"
+            >
+                <svg aria-hidden="true" class="player-choice__hint-icon" fill="none" height="18" viewBox="0 0 24 24" width="18">
+                    <circle cx="11" cy="11" r="6.5" stroke="currentColor" stroke-width="2" />
+                    <path d="m16 16 4.5 4.5" stroke="currentColor" stroke-linecap="round" stroke-width="2" />
+                </svg>
+                {{ dailyClueLabel }}
+            </button>
+
+            <button
+                v-if="!daily.captainSlotId.value && !daily.needsCaptain.value"
+                class="player-choice__captain"
+                :aria-disabled="captainLoading || revealing || daily.busy.value || !!daily.pendingBust.value"
+                type="button"
+                @click="makeCaptainHere"
+            >
+                <span aria-hidden="true" class="player-choice__captain-icon">C</span>
+                Make captain
+            </button>
+        </div>
+
+        <p v-if="!showResult && isDailyV2 && dailyNote" class="player-choice__power-note">{{ dailyNote }}</p>
+
+        <div v-if="!showResult && !isDailyV2" class="player-choice__actions">
             <button
                 class="player-choice__reroll"
                 :class="{ 'player-choice__reroll--rolling': rerollSpinning, 'player-choice__reroll--shop': rerollButton.action === 'shop' }"
@@ -525,6 +779,8 @@ function handleBackdropClick(event: MouseEvent): void {
         </div>
 
         <p v-if="!showResult && powerUpHelp" class="player-choice__power-note">{{ powerUpHelp }}</p>
+
+        <DailyCaptainSheet v-if="isDailyV2" v-model:open="captainSheetOpen" :gate="daily.needsCaptain.value" />
     </dialog>
 </template>
 
@@ -923,6 +1179,182 @@ function handleBackdropClick(event: MouseEvent): void {
 .player-choice__hint--shop {
     border-color: color-mix(in srgb, var(--color-primary) 45%, transparent);
     color: var(--color-primary);
+}
+
+.player-choice__captain-badge {
+    background-color: var(--color-bib);
+    border-radius: var(--radius-pill);
+    color: var(--color-on-bib);
+    letter-spacing: 0.04em;
+    margin-left: 0.4rem;
+    padding: 0.1rem 0.45rem;
+}
+
+// Scouting mode: the cards become "scout" targets, outlined in pitch green
+// (a secondary action, not the red CTA).
+.player-choice__clue-banner {
+    align-items: center;
+    background-color: color-mix(in srgb, var(--color-primary) 10%, var(--color-surface));
+    border: 1px solid color-mix(in srgb, var(--color-primary) 40%, transparent);
+    border-radius: var(--radius-md);
+    display: flex;
+    font-size: 0.85rem;
+    font-weight: 700;
+    justify-content: space-between;
+    margin: 0 0 0.75rem;
+    padding: 0.25rem 0.25rem 0.25rem 0.75rem;
+}
+
+.player-choice__clue-cancel {
+    background: none;
+    border: 0;
+    color: var(--color-primary);
+    cursor: pointer;
+    font: inherit;
+    font-weight: 700;
+    min-height: var(--tap-min);
+    padding: 0 0.75rem;
+}
+
+.player-choice__option--scouting {
+    border-color: var(--color-primary);
+    border-style: dashed;
+}
+
+.player-choice__option--scouted {
+    border-color: var(--color-primary);
+}
+
+.player-choice__option--scouted .player-choice__peek {
+    background-color: color-mix(in srgb, var(--color-primary) 16%, var(--color-surface));
+    color: var(--color-foreground);
+    font-size: 0.8rem;
+}
+
+.player-choice__clue-chip {
+    background-color: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
+    border-radius: var(--radius-pill);
+    color: var(--color-foreground);
+    font-size: 0.7rem;
+    font-weight: 700;
+    grid-column: 1;
+    justify-self: start;
+    margin-top: 0.2rem;
+    padding: 0.15rem 0.5rem;
+}
+
+// The last-pick captain gate: the red CTA names this slot (blind), the
+// quiet button opens the full list.
+.player-choice__gate {
+    background-color: color-mix(in srgb, var(--color-bib) 7%, var(--color-surface));
+    border: 1px solid color-mix(in srgb, var(--color-bib) 40%, transparent);
+    border-radius: var(--radius-md);
+    margin: 0 0 0.75rem;
+    padding: 0.65rem 0.75rem 0.75rem;
+
+    p {
+        font-size: 0.88rem;
+        font-weight: 700;
+        margin: 0 0 0.5rem;
+    }
+}
+
+.player-choice__gate-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.player-choice__gate-primary,
+.player-choice__gate-secondary {
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    flex: 1 1 0;
+    font: inherit;
+    font-size: 0.82rem;
+    font-weight: 700;
+    min-height: var(--tap-min);
+    padding: 0.4rem 0.6rem;
+}
+
+.player-choice__gate-primary {
+    background-color: var(--color-bib);
+    border: 0;
+    color: var(--color-on-bib);
+}
+
+.player-choice__gate-secondary {
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-line);
+    color: var(--color-foreground);
+}
+
+.player-choice__actions--daily {
+    flex-wrap: wrap;
+}
+
+.player-choice__captain {
+    align-items: center;
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-md);
+    color: var(--color-foreground);
+    cursor: pointer;
+    display: flex;
+    flex: 1 1 100%;
+    font: inherit;
+    font-size: 0.82rem;
+    font-weight: 700;
+    gap: 0.45rem;
+    justify-content: center;
+    min-height: var(--tap-min);
+    padding: 0.5rem 0.6rem;
+}
+
+.player-choice__captain:hover,
+.player-choice__captain:focus-visible {
+    border-color: var(--color-bib);
+}
+
+.player-choice__captain[aria-disabled='true'] {
+    cursor: default;
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+.player-choice__captain-icon {
+    align-items: center;
+    background-color: var(--color-bib);
+    border-radius: var(--radius-sm);
+    color: var(--color-on-bib);
+    display: inline-flex;
+    font-family: var(--font-display);
+    font-size: 0.75rem;
+    font-weight: 900;
+    height: 1.2rem;
+    justify-content: center;
+    width: 1.2rem;
+}
+
+.player-choice__hint--on {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+}
+
+.player-choice__result-captain {
+    color: var(--color-bib);
+    font-size: 0.85rem;
+    font-weight: 700;
+    margin: 0;
+}
+
+// Not an error: a calm, blame-free notice (stale options were swapped for free).
+.player-choice__note {
+    background-color: var(--color-surface-2);
+    border-radius: var(--radius-md);
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin: 0.75rem 0 0;
+    padding: 0.6rem 0.75rem;
 }
 
 .player-choice__power-note {

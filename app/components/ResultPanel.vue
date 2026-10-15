@@ -4,8 +4,9 @@ import type { ChallengePayload, DailyChallengePayload } from '../composables/use
 import type { ShareCardSpec } from '../utils/share-card';
 import { trackEvent } from '../utils/analytics';
 import { getSlotShortLabel } from '../utils/formations';
-import { getDistance, TIER_BOUNDARIES } from '../utils/scoring';
+import { getDistance, getTierBoundaries } from '../utils/scoring';
 import { buildShareCardBlob, shareOrDownloadBlob } from '../utils/share-card';
+import { TIER_COPY } from '../utils/tier-copy';
 
 // 'lost' only ever comes from a Daily Challenge's binary objective outcome —
 // the classic game never reaches it (see shared/types.ts's GameStatus).
@@ -17,45 +18,11 @@ interface Outcome {
     detail: string;
 }
 
-// League-table language matching the tier boundaries in scoring.ts — worst
+// League-table language, share emoji and detail lines come from
+// utils/tier-copy.ts (shared with HowToPlayContent and StatsDialog), worst
 // to best: relegated < avoidedRelegation < midTable < europaLeague <
-// championsLeague < win (exact only). Each tier gets its own label and
-// flavor of detail text, not just a generic template with the name swapped
-// in.
-const TIER_COPY: Record<ResultTier, { label: string; detail: (distance: number, target: number) => string }> = {
-    championsLeague: {
-        label: 'Champions League',
-        detail: (distance, target) => `${distance} off ${target} — a genuine near-miss.`,
-    },
-    europaLeague: {
-        label: 'Europa League',
-        detail: (distance, target) => `${distance} off ${target} — a solid finish.`,
-    },
-    midTable: {
-        label: 'Mid-table',
-        detail: (distance, target) => `${distance} off ${target} — solid mid-table.`,
-    },
-    avoidedRelegation: {
-        label: 'Avoided relegation',
-        detail: (distance, target) => `${distance} off ${target} — scraped clear of the bottom.`,
-    },
-    relegated: {
-        label: 'Relegated',
-        detail: (distance, target) => `${distance} off ${target} — a rough one.`,
-    },
-};
-
-// Wordle-style: one line, no image, a distinct symbol per tier. 🏆 is
-// reserved for the Champion (exact) outcome below, so the tiers start at ⭐.
-const TIER_EMOJI: Record<ResultTier, string> = {
-    championsLeague: '⭐',
-    europaLeague: '🟢',
-    midTable: '🟡',
-    avoidedRelegation: '🟠',
-    relegated: '🔴',
-};
-
-const { state, startGame, startDailyGame, startChallengeGame } = useGame();
+// championsLeague < titleWinners < win (exact only).
+const { state, startGame, startDailyGame, startChallengeGame, replaySameFormation } = useGame();
 
 const recap = computed(() => (state.value?.slots ?? []).filter((slot) => slot.player));
 
@@ -164,6 +131,7 @@ const outcome = computed<Outcome | null>(() => {
 // the codebase's TS conventions).
 const TONE_CLASS: Record<Tone, string> = {
     win: 'win',
+    titleWinners: 'title-winners',
     championsLeague: 'champions-league',
     europaLeague: 'europa-league',
     midTable: 'mid-table',
@@ -314,7 +282,7 @@ interface LadderRung {
 
 // The handbook's result-screen ladder: every finish the classic game can
 // reach, best to worst, with the one this game landed on highlighted. Built
-// from scoring.ts's TIER_BOUNDARIES so the ranges can never drift from the
+// from scoring.ts's getTierBoundaries(target) so the ranges can never drift from the
 // real scoring. Daily/challenge objectives are binary, and a bust sits off
 // the ladder entirely, so neither shows it.
 const ladder = computed<LadderRung[]>(() => {
@@ -329,11 +297,11 @@ const ladder = computed<LadderRung[]>(() => {
     ];
     let previousMax = 0;
 
-    for (const { tier, maxDistance } of TIER_BOUNDARIES) {
+    for (const { tier, maxDistance } of getTierBoundaries(game.target)) {
         rungs.push({
             key: tier,
             label: TIER_COPY[tier].label,
-            range: Number.isFinite(maxDistance) ? `within ${maxDistance}` : `${previousMax}+`,
+            range: Number.isFinite(maxDistance) ? `within ${maxDistance}` : `${previousMax + 1}+`,
             tone: TONE_CLASS[tier],
             hit: game.status === 'finished' && game.tier === tier,
         });
@@ -372,7 +340,7 @@ const resultEmoji = computed(() => {
         return '❌';
     }
 
-    return game.tier ? TIER_EMOJI[game.tier] : '';
+    return game.tier ? TIER_COPY[game.tier].emoji : '';
 });
 
 const siteConfig = useSiteConfig();
@@ -480,6 +448,15 @@ async function handleShareImage(): Promise<void> {
             shareImageLabel.value = 'Share image';
         }, 2000);
     }
+}
+
+// Classic's quick replay: a fresh game on the same formation, one tap.
+function handleSameFormation(): void {
+    replaySameFormation();
+}
+
+function handlePickFormation(): void {
+    trackEvent('view_formation_picker', { source: 'result' });
 }
 
 function handlePlayAgain(): void {
@@ -590,14 +567,23 @@ function compactStatCaption(player: { goals: number; assists: number }): string 
             </li>
         </ol>
 
-        <div class="result-panel__actions">
+        <div v-if="!state.objective" class="result-panel__actions">
+            <button class="result-panel__action result-panel__action--primary result-panel__action--wide" type="button" @click="handleSameFormation">
+                Same formation again
+            </button>
+            <NuxtLink class="result-panel__action" to="/select-formation" @click="handlePickFormation">Pick a formation</NuxtLink>
+            <button class="result-panel__action result-panel__action--secondary" type="button" @click="handleShareImage">
+                {{ shareImageLabel }}
+            </button>
+        </div>
+
+        <div v-else class="result-panel__actions">
             <button class="result-panel__action result-panel__action--primary" type="button" @click="handlePlayAgain">
                 Play again
             </button>
             <button class="result-panel__action result-panel__action--secondary" type="button" @click="handleShareImage">
                 {{ shareImageLabel }}
             </button>
-            <NuxtLink v-if="!state.objective" class="result-panel__action result-panel__action--wide" to="/select-formation">Change formation</NuxtLink>
         </div>
 
         <div class="result-panel__share">
@@ -678,6 +664,10 @@ function compactStatCaption(player: { goals: number; assists: number }): string 
     animation: result-panel-win-pop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
     background-color: color-mix(in srgb, var(--color-bib) 6%, var(--color-surface));
     border-color: color-mix(in srgb, var(--color-bib) 45%, transparent);
+}
+
+.result-panel--title-winners {
+    --tone: var(--tier-title);
 }
 
 .result-panel--champions-league {
@@ -936,6 +926,10 @@ function compactStatCaption(player: { goals: number; assists: number }): string 
     --rung-tone: var(--color-bib);
 }
 
+.result-panel__rung--title-winners {
+    --rung-tone: var(--tier-title);
+}
+
 .result-panel__rung--champions-league {
     --rung-tone: var(--tier-cl);
 }
@@ -1025,9 +1019,9 @@ function compactStatCaption(player: { goals: number; assists: number }): string 
     transform: scale(0.98);
 }
 
-// Play again is the screen's one main call to action, so it's the bib-red
-// button; Share image is the secondary green one; Change formation is a
-// quiet full-width ghost under them.
+// Same formation again (Classic) / Play again is the screen's one main call
+// to action, so it's the bib-red button; Share image is the secondary green
+// one; Pick a formation is a quiet ghost beside it.
 .result-panel__action--primary {
     background-color: var(--color-bib);
     border-color: var(--color-bib);

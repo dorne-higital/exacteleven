@@ -1,5 +1,5 @@
 import type { RefreshedToken } from '../../shared/types';
-import { signPlayerToken, verifyTokenForRefresh } from '../utils/draw-token';
+import { signPlayerToken, TOKEN_TTL_LONG_MS, verifyTokenForRefresh } from '../utils/draw-token';
 import { CANDIDATES_PER_DRAW } from '../utils/game-constants';
 
 // Re-signs the anti-peek tokens for players a game was ALREADY offered, so
@@ -8,10 +8,11 @@ import { CANDIDATES_PER_DRAW } from '../utils/game-constants';
 // reroll) even once their 5-minute tokens have expired. Same players, same
 // game id, fresh issuedAt — nothing new is drawn and no goals/assists are
 // returned (D2 boundary unchanged). Added alongside the v1 routes; nothing
-// existing calls or depends on it.
+// existing calls or depends on it. Optional `long: true` (the app) re-signs
+// them as 30-minute tokens (see draw-token.ts) instead of the default 5.
 
 export default defineEventHandler(async (event): Promise<RefreshedToken[]> => {
-    const body = await readBody<{ gameId?: unknown; tokens?: unknown }>(event);
+    const body = await readBody<{ gameId?: unknown; tokens?: unknown; long?: unknown }>(event);
     const gameId = typeof body?.gameId === 'string' ? body.gameId : '';
 
     if (!gameId) {
@@ -26,6 +27,7 @@ export default defineEventHandler(async (event): Promise<RefreshedToken[]> => {
     }
 
     const secret = useRuntimeConfig().drawTokenSecret;
+    const signOptions = body.long === true ? { ttlMs: TOKEN_TTL_LONG_MS } : {};
     const refreshed: RefreshedToken[] = [];
 
     for (const token of body.tokens) {
@@ -40,7 +42,7 @@ export default defineEventHandler(async (event): Promise<RefreshedToken[]> => {
             throw createError({ statusCode: 403, statusMessage: 'One of these players was not offered in this game.' });
         }
 
-        refreshed.push({ id: verification.playerId, token: await signPlayerToken(verification.playerId, gameId, secret) });
+        refreshed.push({ id: verification.playerId, token: await signPlayerToken(verification.playerId, gameId, secret, signOptions) });
     }
 
     return refreshed;

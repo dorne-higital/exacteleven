@@ -113,7 +113,9 @@ function buildAchievements(): AchievementDef[] {
             threshold,
             rank: rankForIndex(index, DAILY_STREAK_THRESHOLDS.length),
             label: `${threshold}-Day Streak`,
-            description: `Win the Daily Challenge ${threshold} ${plural(threshold, 'day')} in a row.`,
+            // Since Daily 2.0 the streak counts days PLAYED (DAILY2_SPEC §1.9);
+            // the metric is still the monotonic bestDailyStreak, so nothing re-locks.
+            description: `Play the Daily ${threshold} ${plural(threshold, 'day')} in a row.`,
         });
     });
 
