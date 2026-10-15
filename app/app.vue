@@ -288,7 +288,8 @@ if (!isApp) {
     }
 
     // The rail carries the brand + nav on desktop, so the header hides.
-    .shell--rail .app-header {
+    // Doubled class so it outranks AppHeader's own scoped display rule.
+    .shell.shell--rail .app-header {
         display: none;
     }
 }
