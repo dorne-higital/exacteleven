@@ -17,7 +17,9 @@ import { resolveDailyDate } from '../utils/trusted-date';
 const route = useRoute();
 const archiveDate = computed(() => (typeof route.query.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(route.query.date) ? route.query.date : null));
 
-const { state, isDrawing, pendingSlotId, drawError, drawErrorMessage, startDailyGame, resumeDailyGame, openSlot, isDailyV2 } = useGame();
+const { state, isDrawing, pendingSlotId, drawError, drawErrorMessage, startDailyGame, resumeDailyGame, openSlot, closeDialog, isDailyV2 } = useGame();
+const { isWide } = useViewport();
+const pickerBusy = useState<boolean>('exact-xi-picker-busy', () => false);
 const daily = useDaily();
 const {
     puzzle,
@@ -138,7 +140,13 @@ const statValue = (player: { goals: number; assists: number }) => dayStatValue(p
 
 const boardLocked = computed(() => isDrawing.value || gameOver.value || (isV2.value && (busy.value || !!pendingBust.value)));
 
+// Desktop: the inline picker leaves the pitch clickable, so another slot
+// switches the picker — closing first keeps the old slot's offer.
 function handleSlotSelect(slotId: string): void {
+    if (dailyGame.value?.activeSlotId && dailyGame.value.activeSlotId !== slotId) {
+        closeDialog();
+    }
+
     openSlot(slotId);
 }
 
@@ -230,9 +238,9 @@ function handleArchiveBack(): void {
 const infoOpen = ref(false);
 const statsOpen = ref(false);
 
-function openInfo(): void {
+function openInfo(source = 'daily'): void {
     infoOpen.value = true;
-    trackEvent('view_how_to_play', { source: 'daily' });
+    trackEvent('view_how_to_play', { source });
 }
 
 function openStats(): void {
@@ -249,7 +257,7 @@ usePageSeoMeta({
 <template>
     <main class="daily">
         <AppHeader>
-            <button aria-label="How to play" class="app-header-button" type="button" @click="openInfo">
+            <button aria-label="How to play" class="app-header-button" type="button" @click="openInfo()">
                 <AppIcon name="info" />
             </button>
             <button aria-label="Your stats" class="app-header-button" type="button" @click="openStats">
@@ -263,123 +271,133 @@ usePageSeoMeta({
                 <AppIcon name="forward" />
             </button>
 
-            <template v-if="formation && dailyGame">
-                <p v-if="isV2 && isArchive" class="daily__archive-banner">
-                    Archive · doesn't touch your streak or the table
-                    <NuxtLink class="daily__archive-link" to="/daily-archive" @click="handleArchiveBack">All Dailies</NuxtLink>
-                </p>
-
-                <header class="daily__header">
-                    <h1 class="daily__title">{{ heading }}</h1>
-                    <p v-if="dailyGame.objective" class="daily__objective">{{ dailyGame.objective.label }}</p>
-                    <p v-if="ruleLine" class="daily__rule">{{ ruleLine }}</p>
-                    <p v-if="isV2 && !isArchive" class="daily__subline">
-                        Same options for everyone · New Daily at midnight UK time<template v-if="countdown"> (in {{ countdown }})</template>
+            <GameLayout v-if="formation && dailyGame" :over="gameOver" @rules="openInfo('daily_panel')">
+                <template #head>
+                    <p v-if="isV2 && isArchive" class="daily__archive-banner">
+                        Archive · doesn't touch your streak or the table
+                        <NuxtLink class="daily__archive-link" to="/daily-archive" @click="handleArchiveBack">All Dailies</NuxtLink>
                     </p>
-                    <span v-if="pill" class="daily__pill" :class="`daily__pill--${pill.tone}`">{{ pill.label }}</span>
-                </header>
 
-                <ScoreBar
-                    :compact="isV2"
-                    :objective="dailyGame.objective"
-                    :projected="isV2 && !gameOver ? projectedScore : null"
-                    :remaining-slots="remainingSlots"
-                    :status="dailyGame.status"
-                    :target="dailyGame.target"
-                    :total="dailyGame.total"
-                />
+                    <header class="daily__header">
+                        <h1 class="daily__title">{{ heading }}</h1>
+                        <p v-if="dailyGame.objective" class="daily__objective">{{ dailyGame.objective.label }}</p>
+                        <p v-if="ruleLine" class="daily__rule">{{ ruleLine }}</p>
+                        <p v-if="isV2 && !isArchive" class="daily__subline">
+                            Same options for everyone · New Daily at midnight UK time<template v-if="countdown"> (in {{ countdown }})</template>
+                        </p>
+                        <span v-if="pill" class="daily__pill" :class="`daily__pill--${pill.tone}`">{{ pill.label }}</span>
+                    </header>
+                </template>
 
-                <div v-if="isV2 && pendingBust" aria-live="assertive" class="daily__bust" role="alert">
-                    <p class="daily__bust-text">Over the limit! Bring on the bench (−100) or take the bust.</p>
-                    <div class="daily__bust-actions">
+                <template #panel>
+                    <ScoreBar
+                        :compact="isV2"
+                        :objective="dailyGame.objective"
+                        :projected="isV2 && !gameOver ? projectedScore : null"
+                        :remaining-slots="remainingSlots"
+                        :status="dailyGame.status"
+                        :target="dailyGame.target"
+                        :total="dailyGame.total"
+                    />
+
+                    <div v-if="isV2 && pendingBust" aria-live="assertive" class="daily__bust" role="alert">
+                        <p class="daily__bust-text">Over the limit! Bring on the bench (−100) or take the bust.</p>
+                        <div class="daily__bust-actions">
+                            <button
+                                class="daily__bust-bench"
+                                :aria-disabled="!canBench.available || busy"
+                                type="button"
+                                @click="openBenchSheet('pending_bust')"
+                            >
+                                Use the bench
+                            </button>
+                            <button class="daily__bust-take" :aria-disabled="acceptingBust || busy" type="button" @click="handleAcceptBust">
+                                Take the bust
+                            </button>
+                        </div>
+                    </div>
+
+                    <div v-else-if="isV2 && !gameOver" class="daily__helps">
                         <button
-                            class="daily__bust-bench"
+                            class="daily__help"
+                            :class="{ 'daily__help--set': captainSlotId }"
+                            :aria-disabled="!!captainSlotId || busy"
+                            type="button"
+                            @click="openCaptainSheet"
+                        >
+                            <span aria-hidden="true" class="daily__help-armband">C</span>
+                            <span class="daily__help-text">{{ captainName ? `Captain: ${captainName}` : 'Name your captain' }}</span>
+                        </button>
+                        <button
+                            class="daily__help"
                             :aria-disabled="!canBench.available || busy"
                             type="button"
-                            @click="openBenchSheet('pending_bust')"
+                            @click="openBenchSheet('board')"
                         >
-                            Use the bench
-                        </button>
-                        <button class="daily__bust-take" :aria-disabled="acceptingBust || busy" type="button" @click="handleAcceptBust">
-                            Take the bust
+                            <span aria-hidden="true" class="daily__help-icon">⇄</span>
+                            <span class="daily__help-text">{{ canBench.reason === 'used' ? 'Bench used' : 'Bench −100' }}</span>
                         </button>
                     </div>
-                </div>
 
-                <div v-else-if="isV2 && !gameOver" class="daily__helps">
-                    <button
-                        class="daily__help"
-                        :class="{ 'daily__help--set': captainSlotId }"
-                        :aria-disabled="!!captainSlotId || busy"
-                        type="button"
-                        @click="openCaptainSheet"
-                    >
-                        <span aria-hidden="true" class="daily__help-armband">C</span>
-                        <span class="daily__help-text">{{ captainName ? `Captain: ${captainName}` : 'Name your captain' }}</span>
-                    </button>
-                    <button
-                        class="daily__help"
-                        :aria-disabled="!canBench.available || busy"
-                        type="button"
-                        @click="openBenchSheet('board')"
-                    >
-                        <span aria-hidden="true" class="daily__help-icon">⇄</span>
-                        <span class="daily__help-text">{{ canBench.reason === 'used' ? 'Bench used' : 'Bench −100' }}</span>
-                    </button>
-                </div>
+                    <p v-if="boardError" aria-live="polite" class="daily__draw-error">{{ boardError }}</p>
 
-                <p v-if="boardError" aria-live="polite" class="daily__draw-error">{{ boardError }}</p>
+                    <WinOddsBanner v-if="!gameOver && !pendingBust" />
 
-                <WinOddsBanner v-if="!gameOver && !pendingBust" />
+                    <DailyFullTime v-if="isV2 && gameOver" @recap="toggleRecap('full_time')" />
+                    <ResultPanel v-else-if="gameOver" />
 
-                <DailyFullTime v-if="isV2 && gameOver" @recap="toggleRecap('full_time')" />
-                <ResultPanel v-else-if="gameOver" />
+                    <DailyRecapCard v-if="recapOpen" />
 
-                <DailyRecapCard v-if="recapOpen" />
+                    <p v-if="drawError" aria-live="polite" class="daily__draw-error">
+                        {{ drawErrorMessage }}
+                    </p>
 
-                <p v-if="drawError" aria-live="polite" class="daily__draw-error">
-                    {{ drawErrorMessage }}
-                </p>
+                    <PlayerChoiceDialog v-if="dailyGame.activeSlotId" :key="isWide ? 'inline' : 'modal'" :inline="isWide" />
+                    <GamePanelIdle v-else-if="isWide && dailyGame.status === 'playing' && !pendingBust && !pendingSlotId" mode="daily" />
+                    <DailyRulesCard v-if="isWide && isV2 && !gameOver" :objective="dailyGame.objective?.label" />
+                    <DailyCaptainSheet v-if="isV2" v-model:open="captainSheetOpen" />
+                    <DailyBenchSheet v-if="isV2" v-model:open="benchSheetOpen" />
+                </template>
 
-                <div class="daily__board">
-                    <Pitch />
-                    <PositionSlot
-                        v-for="slot in dailyGame.slots"
-                        :key="slot.id"
-                        :active="dailyGame.activeSlotId === slot.id"
-                        :benched="isV2 && snapshot?.bench?.slotId === slot.id"
-                        :busy="boardLocked"
-                        :captain="isV2 && captainSlotId === slot.id"
-                        :game-over="gameOver"
-                        :loading="pendingSlotId === slot.id"
-                        :pending-bust="isV2 && pendingBust?.slotId === slot.id"
-                        :slot-data="slot"
-                        :value="isV2 && slot.player ? statValue(slot.player) : null"
-                        @select="handleSlotSelect"
+                <template #board>
+                    <div class="game-board">
+                        <Pitch />
+                        <PositionSlot
+                            v-for="slot in dailyGame.slots"
+                            :key="slot.id"
+                            :active="dailyGame.activeSlotId === slot.id"
+                            :benched="isV2 && snapshot?.bench?.slotId === slot.id"
+                            :busy="boardLocked || (isWide && pickerBusy)"
+                            :captain="isV2 && captainSlotId === slot.id"
+                            :game-over="gameOver"
+                            :loading="pendingSlotId === slot.id"
+                            :pending-bust="isV2 && pendingBust?.slotId === slot.id"
+                            :slot-data="slot"
+                            :value="isV2 && slot.player ? statValue(slot.player) : null"
+                            @select="handleSlotSelect"
+                        />
+                    </div>
+                </template>
+
+                <template #after>
+                    <DailyStreakStrip
+                        v-if="!isArchive"
+                        :results="stats.dailyResults"
+                        :streak="streak"
+                        :win-streak="winStreak"
                     />
-                </div>
 
-                <PlayerChoiceDialog v-if="dailyGame.activeSlotId" />
-                <DailyCaptainSheet v-if="isV2" v-model:open="captainSheetOpen" />
-                <DailyBenchSheet v-if="isV2" v-model:open="benchSheetOpen" />
-
-                <DailyStreakStrip
-                    v-if="!isArchive"
-                    :results="stats.dailyResults"
-                    :streak="streak"
-                    :win-streak="winStreak"
-                />
-
-                <div v-if="isV2 && !isArchive" class="daily__links">
-                    <button v-if="recapAvailable && !gameOver" class="daily__link" type="button" @click="toggleRecap('daily_page')">
-                        {{ recapAvailable === 'thisWeek' ? 'Your week' : 'Last week' }}
-                    </button>
-                    <NuxtLink class="daily__link" to="/daily-archive" @click="trackEvent('view_archive', { source: 'daily_page' })">
-                        <AppIcon v-if="!archiveAvailable" name="lock" />
-                        Daily archive
-                    </NuxtLink>
-                </div>
-            </template>
+                    <div v-if="isV2 && !isArchive" class="daily__links">
+                        <button v-if="recapAvailable && !gameOver" class="daily__link" type="button" @click="toggleRecap('daily_page')">
+                            {{ recapAvailable === 'thisWeek' ? 'Your week' : 'Last week' }}
+                        </button>
+                        <NuxtLink class="daily__link" to="/daily-archive" @click="trackEvent('view_archive', { source: 'daily_page' })">
+                            <AppIcon v-if="!archiveAvailable" name="lock" />
+                            Daily archive
+                        </NuxtLink>
+                    </div>
+                </template>
+            </GameLayout>
 
             <p v-else-if="loadErrorText && !isLoading" class="daily__error">
                 {{ loadErrorText }}
@@ -409,6 +427,9 @@ usePageSeoMeta({
     flex-direction: column;
     gap: 1rem;
     padding: 1rem 1rem 2rem;
+
+    // The header keeps today's width on tablet (it's hidden on desktop).
+    --header-max: 36rem;
 }
 
 .daily__inner {
@@ -418,6 +439,22 @@ usePageSeoMeta({
     gap: 0.75rem;
     max-width: 26rem;
     width: 100%;
+}
+
+@media (width >= 768px) {
+    .daily__inner {
+        max-width: var(--game-max);
+    }
+}
+
+@media (width >= 1024px) {
+    .daily {
+        padding: 2rem 2rem 4rem;
+    }
+
+    .daily__inner {
+        max-width: none;
+    }
 }
 
 .daily__header {
@@ -644,13 +681,6 @@ usePageSeoMeta({
 .daily__help-icon {
     background-color: var(--color-surface-2);
     color: var(--color-primary);
-}
-
-.daily__board {
-    aspect-ratio: 2 / 3;
-    margin-top: 0.25rem;
-    position: relative;
-    width: 100%;
 }
 
 .daily__links {

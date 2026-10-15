@@ -5,9 +5,12 @@
 // PlayerChoiceDialog: showModal() for the focus trap, native Escape/backdrop
 // handling, closing via @close rather than duplicating that logic. Used by
 // InfoDialog and StatsDialog.
-defineProps<{
+// size 'lg' widens the dialog on desktop (>= 1024px) for two-column content
+// such as the Shop; 'md' (default) is today's 28rem everywhere.
+withDefaults(defineProps<{
     title: string;
-}>();
+    size?: 'md' | 'lg';
+}>(), { size: 'md' });
 
 const open = defineModel<boolean>('open', { default: false });
 
@@ -37,7 +40,7 @@ function handleBackdropClick(event: MouseEvent): void {
 </script>
 
 <template>
-    <dialog ref="dialogRef" :aria-labelledby="titleId" class="centered-dialog" @click="handleBackdropClick" @close="handleNativeClose">
+    <dialog ref="dialogRef" :aria-labelledby="titleId" class="centered-dialog" :class="`centered-dialog--${size}`" @click="handleBackdropClick" @close="handleNativeClose">
         <div class="centered-dialog__header">
             <h2 :id="titleId" class="centered-dialog__title">{{ title }}</h2>
             <button aria-label="Close" class="centered-dialog__close" type="button" @click="open = false">
@@ -86,6 +89,12 @@ function handleBackdropClick(event: MouseEvent): void {
 .centered-dialog[open] {
     display: flex;
     flex-direction: column;
+}
+
+@media (width >= 1024px) {
+    .centered-dialog--lg {
+        max-width: min(46rem, calc(100vw - 4rem));
+    }
 }
 
 @starting-style {

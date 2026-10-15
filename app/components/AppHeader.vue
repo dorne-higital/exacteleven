@@ -27,8 +27,7 @@ function openSettings(): void {
 <template>
     <header class="app-header">
         <NuxtLink aria-label="Exact XI home" class="app-header__brand" to="/">
-            <img alt="" class="app-header__mark app-header__mark--light" height="28" src="/logo/exact-xi-mark-on-light.svg" width="28">
-            <img alt="" class="app-header__mark app-header__mark--dark" height="28" src="/logo/exact-xi-mark-on-dark.svg" width="28">
+            <BrandMark />
             <span class="app-header__name">Exact XI</span>
         </NuxtLink>
 
@@ -49,7 +48,7 @@ function openSettings(): void {
     gap: 0.75rem;
     justify-content: space-between;
     margin: 0 auto;
-    max-width: 36rem;
+    max-width: var(--header-max, var(--page-max));
     min-height: var(--tap-min);
     width: 100%;
 }
@@ -62,34 +61,6 @@ function openSettings(): void {
     gap: 0.5rem;
     min-height: var(--tap-min);
     text-decoration: none;
-}
-
-.app-header__mark {
-    display: block;
-}
-
-// The mark swaps with the colour scheme: the same rules as app.vue's token
-// switch (system setting, overridable by data-theme on <html>).
-.app-header__mark--dark {
-    display: none;
-}
-
-@media (prefers-color-scheme: dark) {
-    :root:not([data-theme='light']) .app-header__mark--light {
-        display: none;
-    }
-
-    :root:not([data-theme='light']) .app-header__mark--dark {
-        display: block;
-    }
-}
-
-:root[data-theme='dark'] .app-header__mark--light {
-    display: none;
-}
-
-:root[data-theme='dark'] .app-header__mark--dark {
-    display: block;
 }
 
 .app-header__name {

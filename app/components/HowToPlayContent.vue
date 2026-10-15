@@ -71,7 +71,8 @@ const points = [
             </p>
         </section>
 
-        <section class="how-to-play-content__section">
+        <section class="how-to-play-content__section how-to-play-content__section--split">
+            <div class="how-to-play-content__rule">
             <h3 class="how-to-play-content__heading">How it ends</h3>
             <ul class="how-to-play-content__outcomes">
                 <li class="how-to-play-content__outcome how-to-play-content__outcome--win">
@@ -83,6 +84,8 @@ const points = [
                     <span><strong>Bust</strong> — game over on the spot.</span>
                 </li>
             </ul>
+            </div>
+            <div class="how-to-play-content__example">
             <p class="how-to-play-content__note">
                 Finish under the target and you land on the table instead. Title winners is a few off the
                 target (1.5% of it), so it scales with the formation:
@@ -98,6 +101,7 @@ const points = [
                     <span class="how-to-play-content__rung-range">{{ row.range }}</span>
                 </li>
             </ol>
+            </div>
         </section>
 
         <section class="how-to-play-content__section">
@@ -131,26 +135,36 @@ const points = [
             </ul>
         </section>
 
-        <section class="how-to-play-content__section">
+        <section class="how-to-play-content__section how-to-play-content__section--split">
+            <div class="how-to-play-content__rule">
             <h3 class="how-to-play-content__heading">Daily points (out of 1,000)</h3>
+            <p class="how-to-play-content__note how-to-play-content__note--wide">Any win beats any miss, and any finished XI beats a bust.</p>
+            </div>
+            <div class="how-to-play-content__example">
             <dl class="how-to-play-content__points">
                 <div v-for="row in points" :key="row.label" class="how-to-play-content__point">
                     <dt>{{ row.label }}</dt>
                     <dd>{{ row.value }}</dd>
                 </div>
             </dl>
-            <p class="how-to-play-content__note">Any win beats any miss, and any finished XI beats a bust.</p>
+            <p class="how-to-play-content__note how-to-play-content__note--phone">Any win beats any miss, and any finished XI beats a bust.</p>
+            </div>
         </section>
 
-        <section class="how-to-play-content__section">
+        <section class="how-to-play-content__section how-to-play-content__section--split">
+            <div class="how-to-play-content__rule">
             <h3 class="how-to-play-content__heading">The Daily week</h3>
+            <p class="how-to-play-content__note how-to-play-content__note--wide">Formations rotate too, so no two weeks are the same. Over and under days end early or bust on the spot; read the top of the board first.</p>
+            </div>
+            <div class="how-to-play-content__example">
             <ol class="how-to-play-content__ladder">
                 <li v-for="row in schedule" :key="row.weekday" class="how-to-play-content__rung how-to-play-content__rung--day">
                     <span class="how-to-play-content__day">{{ row.day }}</span>
                     <span>{{ row.label }}</span>
                 </li>
             </ol>
-            <p class="how-to-play-content__note">Formations rotate too, so no two weeks are the same. Over and under days end early or bust on the spot; read the top of the board first.</p>
+            <p class="how-to-play-content__note how-to-play-content__note--phone">Formations rotate too, so no two weeks are the same. Over and under days end early or bust on the spot; read the top of the board first.</p>
+            </div>
         </section>
 
         <section class="how-to-play-content__section how-to-play-content__section--callout">
@@ -168,6 +182,7 @@ const points = [
 // target in a pitch-green "board" tile. The exact win is the red moment;
 // a bust is slate (see the rules in app.vue).
 .how-to-play-content {
+    container: how-to-play / inline-size;
     display: flex;
     flex-direction: column;
     gap: 1.5rem;
@@ -182,6 +197,49 @@ const points = [
     display: flex;
     flex-direction: column;
     gap: 0.6rem;
+}
+
+// Rule / example split. The wrappers vanish (display: contents) until the
+// container is wide enough for two columns, so the phone page and the 28rem
+// InfoDialog keep today's single column. The note is duplicated so it reads
+// under the example on one column and beside it on two; one copy is hidden.
+.how-to-play-content__rule,
+.how-to-play-content__example {
+    display: contents;
+}
+
+.how-to-play-content__note--wide {
+    display: none;
+}
+
+@container how-to-play (width >= 52rem) {
+    .how-to-play-content__section {
+        max-width: 38rem;
+    }
+
+    .how-to-play-content__section--split {
+        align-items: start;
+        column-gap: 2.5rem;
+        display: grid;
+        grid-template-columns: minmax(0, 38rem) minmax(16rem, 1fr);
+        max-width: none;
+    }
+
+    .how-to-play-content__rule,
+    .how-to-play-content__example {
+        display: flex;
+        flex-direction: column;
+        gap: 0.6rem;
+        min-width: 0;
+    }
+
+    .how-to-play-content__note--wide {
+        display: block;
+    }
+
+    .how-to-play-content__note--phone {
+        display: none;
+    }
 }
 
 .how-to-play-content__heading {

@@ -29,7 +29,9 @@ const challengeQuery = computed<Record<string, string>>(() => {
 
 const challengeKey = computed(() => challengeKeyFromQuery(challengeQuery.value));
 
-const { state, isDrawing, pendingSlotId, drawError, drawErrorMessage, startChallengeGame, resumeChallengeGame, openSlot } = useGame();
+const { state, isDrawing, pendingSlotId, drawError, drawErrorMessage, startChallengeGame, resumeChallengeGame, openSlot, closeDialog } = useGame();
+const { isWide } = useViewport();
+const pickerBusy = useState<boolean>('exact-xi-picker-busy', () => false);
 
 const LOAD_ERROR_FALLBACK = 'Couldn\'t load this challenge.';
 
@@ -81,16 +83,22 @@ const gameOver = computed(() => (
     state.value?.status === 'won' || state.value?.status === 'bust' || state.value?.status === 'lost'
 ));
 
+// Desktop: the inline picker leaves the pitch clickable, so another slot
+// switches the picker — closing first keeps the old slot's offer.
 function handleSlotSelect(slotId: string): void {
+    if (state.value?.activeSlotId && state.value.activeSlotId !== slotId) {
+        closeDialog();
+    }
+
     openSlot(slotId);
 }
 
 const infoOpen = ref(false);
 const statsOpen = ref(false);
 
-function openInfo(): void {
+function openInfo(source = 'challenge'): void {
     infoOpen.value = true;
-    trackEvent('view_how_to_play', { source: 'challenge' });
+    trackEvent('view_how_to_play', { source });
 }
 
 function openStats(): void {
@@ -107,7 +115,7 @@ usePageSeoMeta({
 <template>
     <main class="challenge">
         <AppHeader>
-            <button aria-label="How to play" class="app-header-button" type="button" @click="openInfo">
+            <button aria-label="How to play" class="app-header-button" type="button" @click="openInfo()">
                 <AppIcon name="info" />
             </button>
             <button aria-label="Your stats" class="app-header-button" type="button" @click="openStats">
@@ -116,42 +124,49 @@ usePageSeoMeta({
         </AppHeader>
 
         <div class="challenge__inner">
-            <template v-if="formation && state">
-                <h1 class="challenge__title">Challenge · {{ formation.code }}</h1>
-                <p v-if="state.objective" class="challenge__objective">{{ state.objective.label }}</p>
+            <GameLayout v-if="formation && state" :over="gameOver" @rules="openInfo('challenge_panel')">
+                <template #head>
+                    <h1 class="challenge__title">Challenge · {{ formation.code }}</h1>
+                    <p v-if="state.objective" class="challenge__objective">{{ state.objective.label }}</p>
+                </template>
 
-                <ScoreBar
-                    :objective="state.objective"
-                    :remaining-slots="remainingSlots"
-                    :status="state.status"
-                    :target="state.target"
-                    :total="state.total"
-                />
-
-                <WinOddsBanner v-if="!gameOver" />
-
-                <ResultPanel v-if="gameOver" />
-
-                <p v-if="drawError" aria-live="polite" class="challenge__draw-error">
-                    {{ drawErrorMessage }}
-                </p>
-
-                <div class="challenge__board">
-                    <Pitch />
-                    <PositionSlot
-                        v-for="slot in state.slots"
-                        :key="slot.id"
-                        :busy="isDrawing || gameOver"
-                        :game-over="gameOver"
-                        :active="state.activeSlotId === slot.id"
-                        :loading="pendingSlotId === slot.id"
-                        :slot-data="slot"
-                        @select="handleSlotSelect"
+                <template #panel>
+                    <ScoreBar
+                        :objective="state.objective"
+                        :remaining-slots="remainingSlots"
+                        :status="state.status"
+                        :target="state.target"
+                        :total="state.total"
                     />
-                </div>
 
-                <PlayerChoiceDialog v-if="state.activeSlotId" />
-            </template>
+                    <WinOddsBanner v-if="!gameOver" />
+
+                    <ResultPanel v-if="gameOver" />
+
+                    <p v-if="drawError" aria-live="polite" class="challenge__draw-error">
+                        {{ drawErrorMessage }}
+                    </p>
+
+                    <PlayerChoiceDialog v-if="state.activeSlotId" :key="isWide ? 'inline' : 'modal'" :inline="isWide" />
+                    <GamePanelIdle v-else-if="isWide && state.status === 'playing' && !pendingSlotId" mode="challenge" />
+                </template>
+
+                <template #board>
+                    <div class="game-board">
+                        <Pitch />
+                        <PositionSlot
+                            v-for="slot in state.slots"
+                            :key="slot.id"
+                            :busy="isDrawing || gameOver || (isWide && pickerBusy)"
+                            :game-over="gameOver"
+                            :active="state.activeSlotId === slot.id"
+                            :loading="pendingSlotId === slot.id"
+                            :slot-data="slot"
+                            @select="handleSlotSelect"
+                        />
+                    </div>
+                </template>
+            </GameLayout>
 
             <p v-else-if="loadError" class="challenge__error">
                 {{ loadErrorMessage }}
@@ -185,6 +200,9 @@ usePageSeoMeta({
     flex-direction: column;
     gap: 1rem;
     padding: 1rem 1rem 2rem;
+
+    // The header keeps today's width on tablet (it's hidden on desktop).
+    --header-max: 36rem;
 }
 
 .challenge__inner {
@@ -194,6 +212,22 @@ usePageSeoMeta({
     gap: 0.75rem;
     max-width: 26rem;
     width: 100%;
+}
+
+@media (width >= 768px) {
+    .challenge__inner {
+        max-width: var(--game-max);
+    }
+}
+
+@media (width >= 1024px) {
+    .challenge {
+        padding: 2rem 2rem 4rem;
+    }
+
+    .challenge__inner {
+        max-width: none;
+    }
 }
 
 // The formation as the screen's big display heading, like the handbook's
@@ -209,13 +243,6 @@ usePageSeoMeta({
     color: var(--color-muted);
     font-weight: 600;
     margin: -0.4rem 0 0;
-}
-
-.challenge__board {
-    aspect-ratio: 2 / 3;
-    margin-top: 0.25rem;
-    position: relative;
-    width: 100%;
 }
 
 .challenge__error {

@@ -142,7 +142,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-    <CenteredDialog v-model:open="open" title="Shop">
+    <CenteredDialog v-model:open="open" size="lg" title="Shop">
         <div class="shop">
             <p v-if="tipThanks" class="shop__thanks" role="status">
                 <span class="shop__thanks-title">Cheers!</span>
@@ -298,6 +298,33 @@ onUnmounted(() => {
     display: flex;
     flex-direction: column;
     gap: 0.85rem;
+}
+
+// Desktop / iPad (the dialog is 46rem wide here): Pro on the left at full
+// height; boosts, Kit Bag and the tip jar on the right; notices and Restore
+// Purchases span both columns.
+@media (width >= 1024px) {
+    .shop {
+        align-items: start;
+        display: grid;
+        gap: 1rem;
+        grid-auto-flow: row dense;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    }
+
+    .shop > * {
+        grid-column: 1 / -1;
+    }
+
+    .shop > .shop__card {
+        grid-column: 2;
+    }
+
+    .shop > .shop__card--pro {
+        align-self: stretch;
+        grid-column: 1;
+        grid-row: span 3;
+    }
 }
 
 .shop__card {

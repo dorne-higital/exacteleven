@@ -9,6 +9,20 @@ import { trackEvent } from '../utils/analytics';
 const CONTACT_EMAIL = 'hello@exacteleven.co.uk';
 const LAST_UPDATED = '13 October 2026';
 
+// Desktop "On this page" list, built from the section h2 ids below.
+const TOC = [
+    { id: 'privacy-summary', label: 'The short version' },
+    { id: 'privacy-device', label: 'Stored on your device' },
+    { id: 'privacy-server', label: 'When you play' },
+    { id: 'privacy-analytics', label: 'Analytics' },
+    { id: 'privacy-third-parties', label: 'Other services' },
+    { id: 'privacy-contact', label: 'Contact' },
+];
+
+function handleTocClick(section: string): void {
+    trackEvent('privacy_toc_click', { section });
+}
+
 function handleContactClick(): void {
     trackEvent('contact_click', { source: 'privacy' });
 }
@@ -29,6 +43,7 @@ usePageSeoMeta({
         </AppHeader>
 
         <div class="privacy__inner">
+            <div class="privacy__body">
             <h1>Privacy</h1>
 
             <p class="privacy__updated">Last updated {{ LAST_UPDATED }}</p>
@@ -95,6 +110,16 @@ usePageSeoMeta({
                     <a :href="`mailto:${CONTACT_EMAIL}`" @click="handleContactClick">{{ CONTACT_EMAIL }}</a>.
                 </p>
             </section>
+            </div>
+
+            <nav aria-labelledby="privacy-toc-title" class="privacy__toc">
+                <p id="privacy-toc-title" class="privacy__toc-title">On this page</p>
+                <ol class="privacy__toc-list">
+                    <li v-for="item in TOC" :key="item.id">
+                        <a class="privacy__toc-link" :href="`#${item.id}`" @click="handleTocClick(item.id)">{{ item.label }}</a>
+                    </li>
+                </ol>
+            </nav>
         </div>
     </main>
 </template>
@@ -116,8 +141,86 @@ usePageSeoMeta({
     flex-direction: column;
     gap: 0.75rem;
     margin: 0 auto;
-    max-width: 36rem;
+    max-width: var(--page-max);
     width: 100%;
+}
+
+// Phone + tablet: the body wrapper vanishes so the page is today's column,
+// and the "On this page" list is desktop only.
+.privacy__body {
+    display: contents;
+}
+
+.privacy__toc {
+    display: none;
+}
+
+@media (width >= 1024px) {
+    .privacy {
+        padding: 2rem 2rem 5.5rem;
+    }
+
+    .privacy__inner {
+        align-items: start;
+        column-gap: 3rem;
+        display: grid;
+        grid-template-columns: minmax(0, 42rem) 14rem;
+        justify-content: center;
+    }
+
+    .privacy__body {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+        min-width: 0;
+    }
+
+    .privacy__toc {
+        display: flex;
+        flex-direction: column;
+        gap: 0.4rem;
+        position: sticky;
+        top: 2rem;
+    }
+
+    // Land headings below the top edge when a TOC link scrolls to them.
+    h2 {
+        scroll-margin-top: 2rem;
+    }
+}
+
+.privacy__toc-title {
+    color: var(--color-muted);
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    margin: 0;
+    text-transform: uppercase;
+}
+
+.privacy__toc-list {
+    border-left: 1px solid var(--color-line);
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.privacy__toc-link {
+    align-items: center;
+    border-radius: var(--radius-sm);
+    color: var(--color-muted);
+    display: flex;
+    font-size: 0.85rem;
+    font-weight: 600;
+    min-height: var(--tap-min);
+    padding: 0 0.75rem;
+    text-decoration: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .privacy__toc-link:hover {
+        color: var(--color-foreground);
+    }
 }
 
 // The back pill's look comes from AppHeader (.app-header-back).

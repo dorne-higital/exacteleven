@@ -58,7 +58,10 @@ const remainingLabel = computed(() => (props.status === 'playing' ? 'Remaining' 
                 everything outside it (this bar included) inert and excluded
                 from the accessibility tree. The equivalent announcement is
                 made from inside that dialog instead — see its
-                `.player-choice__sr-announcement`.
+                `.player-choice__sr-announcement`. On desktop the picker is
+                inline (non-modal) and this bar isn't inert, but that same
+                announcement still covers each reveal, so adding aria-live
+                here would only double it.
             -->
             <div class="score-bar__item">
                 <span class="score-bar__label">Total</span>

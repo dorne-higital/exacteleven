@@ -7,7 +7,9 @@ const route = useRoute();
 const formationCode = computed(() => String(route.query.f ?? ''));
 const formation = computed(() => getFormation(formationCode.value));
 
-const { state, isDrawing, pendingSlotId, drawError, drawErrorMessage, startGame, resumeGame, openSlot, refreshWinOdds } = useGame();
+const { state, isDrawing, pendingSlotId, drawError, drawErrorMessage, startGame, resumeGame, openSlot, closeDialog, refreshWinOdds } = useGame();
+const { isWide } = useViewport();
+const pickerBusy = useState<boolean>('exact-xi-picker-busy', () => false);
 
 // Whether the setup block below already resolved this page's game on the
 // client (resumed or started) — onMounted then has nothing left to do.
@@ -67,16 +69,22 @@ const gameOver = computed(() => (
     state.value?.status === 'won' || state.value?.status === 'bust' || state.value?.status === 'finished'
 ));
 
+// Desktop: the inline picker leaves the pitch clickable, so another slot
+// switches the picker — closing first keeps the old slot's offer.
 function handleSlotSelect(slotId: string): void {
+    if (state.value?.activeSlotId && state.value.activeSlotId !== slotId) {
+        closeDialog();
+    }
+
     openSlot(slotId);
 }
 
 const infoOpen = ref(false);
 const statsOpen = ref(false);
 
-function openInfo(): void {
+function openInfo(source = 'play'): void {
     infoOpen.value = true;
-    trackEvent('view_how_to_play', { source: 'play', formation: formationCode.value });
+    trackEvent('view_how_to_play', { source, formation: formationCode.value });
 }
 
 function openStats(): void {
@@ -95,7 +103,7 @@ usePageSeoMeta({
 <template>
     <main class="play">
         <AppHeader>
-            <button aria-label="How to play" class="app-header-button" type="button" @click="openInfo">
+            <button aria-label="How to play" class="app-header-button" type="button" @click="openInfo()">
                 <AppIcon name="info" />
             </button>
             <button aria-label="Your stats" class="app-header-button" type="button" @click="openStats">
@@ -104,40 +112,47 @@ usePageSeoMeta({
         </AppHeader>
 
         <div class="play__inner">
-            <template v-if="formation && state">
-                <h1 class="play__title">{{ formation.code }} formation</h1>
+            <GameLayout v-if="formation && state" :over="gameOver" @rules="openInfo('play_panel')">
+                <template #head>
+                    <h1 class="play__title">{{ formation.code }} formation</h1>
+                </template>
 
-                <ScoreBar
-                    :remaining-slots="remainingSlots"
-                    :status="state.status"
-                    :target="state.target"
-                    :total="state.total"
-                />
-
-                <WinOddsBanner v-if="!gameOver" />
-
-                <ResultPanel v-if="gameOver" />
-
-                <p v-if="drawError" aria-live="polite" class="play__draw-error">
-                    {{ drawErrorMessage }}
-                </p>
-
-                <div class="play__board">
-                    <Pitch />
-                    <PositionSlot
-                        v-for="slot in state.slots"
-                        :key="slot.id"
-                        :busy="isDrawing || gameOver"
-                        :game-over="gameOver"
-                        :active="state.activeSlotId === slot.id"
-                        :loading="pendingSlotId === slot.id"
-                        :slot-data="slot"
-                        @select="handleSlotSelect"
+                <template #panel>
+                    <ScoreBar
+                        :remaining-slots="remainingSlots"
+                        :status="state.status"
+                        :target="state.target"
+                        :total="state.total"
                     />
-                </div>
 
-                <PlayerChoiceDialog v-if="state.activeSlotId" />
-            </template>
+                    <WinOddsBanner v-if="!gameOver" />
+
+                    <ResultPanel v-if="gameOver" />
+
+                    <p v-if="drawError" aria-live="polite" class="play__draw-error">
+                        {{ drawErrorMessage }}
+                    </p>
+
+                    <PlayerChoiceDialog v-if="state.activeSlotId" :key="isWide ? 'inline' : 'modal'" :inline="isWide" />
+                    <GamePanelIdle v-else-if="isWide && state.status === 'playing' && !pendingSlotId" mode="classic" />
+                </template>
+
+                <template #board>
+                    <div class="game-board">
+                        <Pitch />
+                        <PositionSlot
+                            v-for="slot in state.slots"
+                            :key="slot.id"
+                            :busy="isDrawing || gameOver || (isWide && pickerBusy)"
+                            :game-over="gameOver"
+                            :active="state.activeSlotId === slot.id"
+                            :loading="pendingSlotId === slot.id"
+                            :slot-data="slot"
+                            @select="handleSlotSelect"
+                        />
+                    </div>
+                </template>
+            </GameLayout>
 
             <p v-else class="play__error">
                 <template v-if="formationCode">"{{ formationCode }}" isn't a valid formation.</template>
@@ -169,6 +184,9 @@ usePageSeoMeta({
     flex-direction: column;
     gap: 1rem;
     padding: 1rem 1rem 2rem;
+
+    // The header keeps today's width on tablet (it's hidden on desktop).
+    --header-max: 36rem;
 }
 
 .play__inner {
@@ -180,19 +198,28 @@ usePageSeoMeta({
     width: 100%;
 }
 
+@media (width >= 768px) {
+    .play__inner {
+        max-width: var(--game-max);
+    }
+}
+
+@media (width >= 1024px) {
+    .play {
+        padding: 2rem 2rem 4rem;
+    }
+
+    .play__inner {
+        max-width: none;
+    }
+}
+
 // The formation as the screen's big display heading, like the handbook's
 // pitch mockup ("4-3-3"), left-aligned over the scoreboard.
 .play__title {
     align-self: stretch;
     font-size: 2rem;
     margin: 0.25rem 0 0;
-}
-
-.play__board {
-    aspect-ratio: 2 / 3;
-    margin-top: 0.25rem;
-    position: relative;
-    width: 100%;
 }
 
 .play__error {

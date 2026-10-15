@@ -5,10 +5,16 @@ import { gameMode } from '../composables/useGame';
 import { trackEvent } from '../utils/analytics';
 import { clueChipText } from '../utils/daily-screens';
 import { describeSlotRole } from '../utils/formations';
+import { isEditableTarget, pickerKeyAction, shortcutKeyName } from '../utils/picker-keys';
 import { isAppBuild } from '../utils/platform';
 import { powerUpButton, powerUpNote } from '../utils/power-ups';
 import type { PowerUpKind } from '../utils/power-ups';
 import { classifyReveal, pickFlavorLine } from '../utils/reveal-flavor';
+
+const props = defineProps<{
+    /** Desktop (≥ 1024): a non-modal dialog docked in the game panel (DESKTOP_SPEC §3.2). */
+    inline?: boolean;
+}>();
 
 const { state, isDrawing, pickPlayer, useReroll, useHint, closeDialog, canReroll, canHint, openNextSlot, isDailyV2 } = useGame();
 const daily = useDaily();
@@ -350,8 +356,85 @@ onUnmounted(() => {
     stopScramble();
 });
 
+// ---- inline mode, busy flag and keyboard shortcuts (DESKTOP_SPEC §3.2, §4) ----
+const { finePointer, isWide } = useViewport();
+const showKeyHints = computed(() => finePointer.value && isWide.value);
+const rerollRef = ref<HTMLButtonElement | null>(null);
+// Lets the pages lock the pitch mid-reveal (the inline picker leaves it clickable).
+const pickerBusy = useState<boolean>('exact-xi-picker-busy', () => false);
+let returnFocusTo: HTMLElement | null = null;
+const loggedKeys = new Set<string>();
+
+watchEffect(() => {
+    pickerBusy.value = revealing.value || isScrambling.value || (isDailyV2.value && daily.busy.value);
+});
+
+watch(() => state.value?.activeSlotId, () => {
+    loggedKeys.clear();
+});
+
+function otherModalOpen(): boolean {
+    try {
+        return [...document.querySelectorAll('dialog:modal')].some((dialog) => dialog !== dialogRef.value);
+    } catch {
+        return false;
+    }
+}
+
+function handleKeydown(event: KeyboardEvent): void {
+    const action = pickerKeyAction(event, {
+        targetIsEditable: isEditableTarget(event.target),
+        otherModalOpen: otherModalOpen(),
+        busy: revealing.value || isScrambling.value || isDrawing.value || (isDailyV2.value && daily.busy.value),
+        showingResult: showResult.value,
+        optionCount: candidates.value.length,
+        isDaily: isDailyV2.value,
+        rerollAction: isDailyV2.value ? (daily.canReroll.value.available ? 'use' : 'none') : rerollButton.value.action,
+        inline: !!props.inline,
+    });
+
+    if (!action) {
+        return;
+    }
+
+    event.preventDefault();
+
+    const key = shortcutKeyName(event.key);
+
+    if (!loggedKeys.has(key)) {
+        loggedKeys.add(key);
+        trackEvent('keyboard_shortcut', { key, action: action.type, mode: mode.value });
+    }
+
+    if (action.type === 'pick') {
+        const candidate = candidates.value[action.index];
+
+        if (candidate) {
+            void handlePick(candidate);
+        }
+    } else if (action.type === 'reroll') {
+        void handleReroll();
+    } else if (action.type === 'reroll_focus') {
+        rerollRef.value?.focus();
+    } else {
+        dialogRef.value?.close();
+    }
+}
+
 onMounted(() => {
-    dialogRef.value?.showModal();
+    if (props.inline) {
+        returnFocusTo = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        dialogRef.value?.show();
+    } else {
+        dialogRef.value?.showModal();
+    }
+
+    window.addEventListener('keydown', handleKeydown);
+});
+
+onBeforeUnmount(() => {
+    window.removeEventListener('keydown', handleKeydown);
+    pickerBusy.value = false;
 });
 
 function eraLabel(candidate: DrawnPlayer): string {
@@ -583,6 +666,11 @@ async function handleHint(): Promise<void> {
 // the same options rather than drawing new ones for free.
 function handleNativeClose(): void {
     closeDialog();
+
+    // A non-modal dialog doesn't restore focus natively.
+    if (props.inline && returnFocusTo?.isConnected) {
+        returnFocusTo.focus();
+    }
 }
 
 // A click that lands on the <dialog> element itself (not a descendant) means
@@ -590,14 +678,19 @@ function handleNativeClose(): void {
 // click-outside on a <dialog>. Same close-but-keep-the-offer behavior Escape
 // already triggers via handleNativeClose above.
 function handleBackdropClick(event: MouseEvent): void {
-    if (event.target === dialogRef.value) {
+    if (!props.inline && event.target === dialogRef.value) {
         dialogRef.value?.close();
     }
 }
 </script>
 
 <template>
-    <dialog ref="dialogRef" :aria-labelledby="titleId" class="player-choice" @click="handleBackdropClick" @close="handleNativeClose">
+    <dialog
+        ref="dialogRef"
+        :aria-labelledby="titleId"
+        class="player-choice"
+        :class="{ 'player-choice--inline': inline }"
+        @click="handleBackdropClick" @close="handleNativeClose">
         <div aria-hidden="true" class="player-choice__handle" />
 
         <div class="player-choice__top">
@@ -638,6 +731,7 @@ function handleBackdropClick(event: MouseEvent): void {
             <li v-for="(candidate, index) in candidates" :key="candidate.id">
                 <button
                     class="player-choice__option"
+                    :aria-keyshortcuts="index < 3 ? String(index + 1) : undefined"
                     :aria-disabled="revealing || isDrawing || isScrambling"
                     :aria-label="settled[index]
                         ? `${clueMode ? 'Scout ' : ''}${candidate.name} — ${eraLabel(candidate)}${ruledOutId === candidate.id ? ' — Hint: avoid' : ''}${clueHere?.playerId === candidate.id ? ` — ${clueChipText(clueHere.band, dailyStat)}` : ''}`
@@ -652,6 +746,7 @@ function handleBackdropClick(event: MouseEvent): void {
                     type="button"
                     @click="handlePick(candidate)"
                 >
+                    <span v-if="showKeyHints && index < 3" aria-hidden="true" class="player-choice__key">{{ index + 1 }}</span>
                     <span aria-hidden="true" class="player-choice__name">{{ displayNames[index] }}</span>
                     <span aria-hidden="true" class="player-choice__meta">{{ displayMeta[index] }}</span>
                     <span v-if="clueHere?.playerId === candidate.id" aria-hidden="true" class="player-choice__clue-chip">
@@ -693,6 +788,8 @@ function handleBackdropClick(event: MouseEvent): void {
 
         <div v-if="!showResult && isDailyV2" class="player-choice__actions player-choice__actions--daily">
             <button
+                ref="rerollRef"
+                aria-keyshortcuts="R"
                 class="player-choice__reroll"
                 :class="{ 'player-choice__reroll--rolling': rerollSpinning }"
                 :aria-disabled="!daily.canReroll.value.available || revealing || isScrambling || daily.busy.value"
@@ -708,6 +805,7 @@ function handleBackdropClick(event: MouseEvent): void {
                     <circle cx="16" cy="16" fill="currentColor" r="1.4" />
                 </svg>
                 {{ dailyRerollLabel }}
+                <span v-if="showKeyHints" aria-hidden="true" class="player-choice__key player-choice__key--inline">R</span>
             </button>
 
             <button
@@ -741,6 +839,7 @@ function handleBackdropClick(event: MouseEvent): void {
 
         <div v-if="!showResult && !isDailyV2" class="player-choice__actions">
             <button
+                :aria-keyshortcuts="rerollButton.action === 'use' ? 'R' : undefined"
                 class="player-choice__reroll"
                 :class="{ 'player-choice__reroll--rolling': rerollSpinning, 'player-choice__reroll--shop': rerollButton.action === 'shop' }"
                 :aria-disabled="rerollButton.action === 'none' || revealing || isDrawing || isScrambling"
@@ -756,6 +855,7 @@ function handleBackdropClick(event: MouseEvent): void {
                     <circle cx="16" cy="16" fill="currentColor" r="1.4" />
                 </svg>
                 {{ rerollButton.label }}
+                <span v-if="showKeyHints && rerollButton.action === 'use'" aria-hidden="true" class="player-choice__key player-choice__key--inline">R</span>
             </button>
 
             <button
@@ -844,6 +944,75 @@ function handleBackdropClick(event: MouseEvent): void {
     .player-choice {
         transition: none;
     }
+}
+
+// Inline (desktop panel): a non-modal card docked in the flow. No backdrop,
+// no slide — an opacity fade instead.
+.player-choice.player-choice--inline {
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-card);
+    box-shadow: none;
+    flex-shrink: 0;
+    inset: auto;
+    margin: 0;
+    max-height: none;
+    max-width: none;
+    opacity: 1;
+    overflow: visible;
+    padding: 1rem;
+    position: static;
+    transform: none;
+    transition: opacity 0.2s ease, overlay 0.2s ease allow-discrete, display 0.2s ease allow-discrete;
+    width: 100%;
+}
+
+@starting-style {
+    .player-choice.player-choice--inline[open] {
+        opacity: 0;
+        transform: none;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .player-choice.player-choice--inline {
+        transition: none;
+    }
+}
+
+.player-choice--inline .player-choice__handle {
+    display: none;
+}
+
+// Shortcut hints (fine pointer + desktop only): a small mono key badge.
+.player-choice__option {
+    position: relative;
+}
+
+.player-choice__key {
+    background-color: var(--color-surface-2);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-sm);
+    color: var(--color-muted);
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    font-weight: 700;
+    line-height: 1;
+    padding: 0.15rem 0.3rem;
+    position: absolute;
+    right: 0.75rem;
+    top: -0.45rem;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .player-choice__option:not([aria-disabled='true']):hover {
+        background-color: var(--color-surface-2);
+    }
+}
+
+.player-choice__key--inline {
+    margin-left: 0.15rem;
+    position: static;
 }
 
 // The scrim is a translucent --color-primary-strong (deep pitch green), not

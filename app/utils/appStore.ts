@@ -3,6 +3,10 @@
 // in App Store Connect, and the products/entitlements in RevenueCat — they are
 // permanent, so never rename them. Same layout as Footballdle's appStore.ts.
 
+// The public App Store page, once the app is live. null shows "Coming soon
+// to the App Store" on the website's rail card instead of a link.
+export const APP_STORE_URL: string | null = null;
+
 // App Store Connect "Product ID" values. Loaded by ID with
 // Purchases.getProducts (no RevenueCat offerings).
 export const PRODUCT_IDS = {

@@ -43,7 +43,7 @@ usePageSeoMeta({
     flex-direction: column;
     gap: 1rem;
     margin: 0 auto;
-    max-width: 36rem;
+    max-width: var(--page-max);
     width: 100%;
 }
 
@@ -67,6 +67,22 @@ h1 {
 @media (width >= 30rem) {
     .how-to-play__card {
         padding: 1.5rem;
+    }
+}
+
+// Desktop: a wide card; HowToPlayContent's container query splits each
+// rule from its example once the card is wide enough.
+@media (width >= 1024px) {
+    .how-to-play {
+        padding: 2rem 2rem 5.5rem;
+    }
+
+    .how-to-play__inner {
+        max-width: 68rem;
+    }
+
+    .how-to-play__card {
+        padding: 2rem 2.25rem;
     }
 }
 </style>

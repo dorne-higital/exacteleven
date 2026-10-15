@@ -4,8 +4,10 @@
 // rather than three near-identical copies of the same markup drifting apart
 // over time. Line icons at a 2px stroke, drawn in currentColor so they take
 // whatever token their parent sets.
+import type { AppIconName } from '../utils/icons';
+
 defineProps<{
-    name: 'back' | 'bolt' | 'calendar' | 'check' | 'chevron' | 'close' | 'flame' | 'forward' | 'gear' | 'info' | 'lock' | 'pitch' | 'stats' | 'target' | 'trophy';
+    name: AppIconName;
 }>();
 </script>
 
@@ -48,6 +50,18 @@ defineProps<{
         <rect height="8" rx="1" stroke="currentColor" stroke-width="2" width="4" x="4" y="12" />
         <rect height="12" rx="1" stroke="currentColor" stroke-width="2" width="4" x="10" y="8" />
         <rect height="16" rx="1" stroke="currentColor" stroke-width="2" width="4" x="16" y="4" />
+    </svg>
+
+    <svg v-else-if="name === 'phone'" aria-hidden="true" fill="none" height="20" viewBox="0 0 24 24" width="20">
+        <rect height="18" rx="3" stroke="currentColor" stroke-width="2" width="12" x="6" y="3" />
+        <path d="M11 17.5h2" stroke="currentColor" stroke-linecap="round" stroke-width="2" />
+    </svg>
+
+    <svg v-else-if="name === 'grid'" aria-hidden="true" fill="none" height="20" viewBox="0 0 24 24" width="20">
+        <rect height="7" rx="1.5" stroke="currentColor" stroke-width="2" width="7" x="4" y="4" />
+        <rect height="7" rx="1.5" stroke="currentColor" stroke-width="2" width="7" x="13" y="4" />
+        <rect height="7" rx="1.5" stroke="currentColor" stroke-width="2" width="7" x="4" y="13" />
+        <rect height="7" rx="1.5" stroke="currentColor" stroke-width="2" width="7" x="13" y="13" />
     </svg>
 
     <svg v-else-if="name === 'calendar'" aria-hidden="true" fill="none" height="20" viewBox="0 0 24 24" width="20">

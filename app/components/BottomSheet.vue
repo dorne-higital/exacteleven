@@ -103,6 +103,26 @@ function handleBackdropClick(event: MouseEvent): void {
     }
 }
 
+// Desktop / iPad (>= 1024px): a centred modal, not bottom-anchored. Entry is
+// a fade plus an 8px rise instead of the slide-up.
+@media (width >= 1024px) {
+    .bottom-sheet {
+        bottom: auto;
+        max-height: calc(85dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+        opacity: 1;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        transition: transform 0.2s ease, opacity 0.2s ease, overlay 0.2s ease allow-discrete, display 0.2s ease allow-discrete;
+    }
+
+    @starting-style {
+        .bottom-sheet[open] {
+            opacity: 0;
+            transform: translate(-50%, calc(-50% + 8px));
+        }
+    }
+}
+
 .bottom-sheet::backdrop {
     background-color: color-mix(in srgb, var(--color-primary-strong) 55%, transparent);
 }

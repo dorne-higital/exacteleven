@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppShell from './components/shell/AppShell.vue';
 import { isAppBuild } from './utils/platform';
 import { themeBootScript } from './utils/themes';
 
@@ -98,7 +99,9 @@ if (!isApp) {
 <template>
     <div class="app-shell">
         <NuxtRouteAnnouncer />
-        <NuxtPage />
+        <AppShell>
+            <NuxtPage />
+        </AppShell>
         <AchievementToast />
         <UpdatePrompt v-if="isApp" />
         <!-- App only: the website has no shop (useShop().openShop() is a no-op there). -->
@@ -252,11 +255,58 @@ if (!isApp) {
     --shadow-lg: 0 18px 48px rgb(15 29 22 / 22%);
     --tap-min: 44px;
 
+    // Layout sizes (not colours, so the same in every theme and kit).
+    // --rail-w 0 means no rail; see the breakpoints just below.
+    --page-max: 36rem;
+    --game-max: 26rem;
+    --rail-w: 0px;
+    --panel-w: 0px;
+    --board-max: 100%;
+
     // Legacy aliases (see the header comment)
     --body-texture: none;
     --body-texture-size: auto;
 
     color-scheme: light;
+}
+
+// Layout breakpoints: tablet 768, desktop 1024 (compact rail), full rail
+// 1280, large 1440. Phones (< 768) keep the defaults above.
+@media (width >= 768px) {
+    :root {
+        --page-max: 42rem;
+        --game-max: 30rem;
+    }
+}
+
+@media (width >= 1024px) {
+    :root {
+        --rail-w: 5.75rem;
+        --page-max: 64rem;
+        --panel-w: 21.25rem;
+        --board-max: 34rem;
+    }
+
+    // The rail carries the brand + nav on desktop, so the header hides.
+    .shell--rail .app-header {
+        display: none;
+    }
+}
+
+@media (width >= 1280px) {
+    :root {
+        --rail-w: 15.5rem;
+        --panel-w: 22.5rem;
+        --board-max: 36rem;
+    }
+}
+
+@media (width >= 1440px) {
+    :root {
+        --page-max: 76rem;
+        --panel-w: 23.75rem;
+        --board-max: 40rem;
+    }
 }
 
 // Follows the system setting by default; the Appearance setting

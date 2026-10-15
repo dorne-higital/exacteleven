@@ -4,9 +4,9 @@ import { trackEvent } from '../utils/analytics';
 import { fetchAppConfig } from '../utils/app-config';
 import { formatPoints } from '../utils/daily-screens';
 import { formationLabel } from '../utils/share-daily';
-import { resolveDailyDate } from '../utils/trusted-date';
+import { formatCountdown, nextUkMidnight, resolveDailyDate } from '../utils/trusted-date';
 
-const { stats, currentDailyStreak } = useStats();
+const { stats, currentDailyStreak, currentDailyWinStreak } = useStats();
 const { lastFormation } = useGame();
 const { recapAvailable } = useDaily();
 
@@ -21,8 +21,24 @@ const mounted = ref(false);
 const replayFormation = computed(() => (mounted.value ? lastFormation.value : null));
 const showRecap = computed(() => (mounted.value ? recapAvailable.value : null));
 
+// Desktop masthead: "Next Daily in 4h 12m", ticking once a minute (client only).
+const nextDailyIn = ref('');
+let countdownTimer: ReturnType<typeof setInterval> | null = null;
+
+function tickCountdown(): void {
+    nextDailyIn.value = formatCountdown(nextUkMidnight(new Date()).toISOString());
+}
+
+onBeforeUnmount(() => {
+    if (countdownTimer) {
+        clearInterval(countdownTimer);
+    }
+});
+
 onMounted(async () => {
     mounted.value = true;
+    tickCountdown();
+    countdownTimer = setInterval(tickCountdown, 60_000);
 
     const date = resolveDailyDate(await fetchAppConfig());
 
@@ -55,6 +71,21 @@ const dailyTitle = computed(() => {
     }
 
     return dailyInProgress.value ? 'Carry on' : 'Play today\'s Daily';
+});
+
+const dailyDetail = computed(() => (todayScore.value ? 'Next Daily at midnight UK time.' : 'Same puzzle for everyone today.'));
+
+const winStreak = computed(() => (dailyToday.value ? currentDailyWinStreak(dailyToday.value) : stats.value.dailyWinStreak));
+
+// "Wed 14 Oct" from the resolved UK Daily date (desktop masthead eyebrow).
+const mastheadDate = computed(() => {
+    if (!dailyToday.value) {
+        return '';
+    }
+
+    return new Date(`${dailyToday.value}T12:00:00Z`).toLocaleDateString('en-GB', {
+        weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC',
+    });
 });
 
 const playedStreak = computed(() => (dailyToday.value ? currentDailyStreak(dailyToday.value) : stats.value.dailyStreak));
@@ -143,7 +174,18 @@ usePageSeoMeta({
         </AppHeader>
 
         <div class="home__inner">
-            <h1 class="home__visually-hidden-title">Exact XI</h1>
+            <!-- One h1, switched by CSS: visually hidden "Exact XI" on phone and
+                 tablet, the visible "Matchday" masthead from 1024px. -->
+            <header class="home__masthead">
+                <p class="home__date">{{ mastheadDate || '\u00a0' }}</p>
+                <h1 class="home__title">
+                    <span class="home__title-brand">Exact XI</span>
+                    <span class="home__title-desk">Matchday</span>
+                </h1>
+                <p class="home__countdown">
+                    <template v-if="nextDailyIn">Next Daily in <strong>{{ nextDailyIn }}</strong></template>
+                </p>
+            </header>
 
             <section aria-labelledby="home-play-title" class="board">
                 <span class="board__label">Classic</span>
@@ -193,7 +235,7 @@ usePageSeoMeta({
                         <AppIcon class="mode-card__icon" name="calendar" />
                     </span>
                     <span class="mode-card__title">{{ dailyTitle }}</span>
-                    <span class="mode-card__detail">{{ todayScore ? 'Next Daily at midnight UK time.' : 'Same puzzle for everyone today.' }}</span>
+                    <span class="mode-card__detail">{{ dailyDetail }}</span>
                     <span class="mode-card__streak">
                         <DailyStreakStrip compact :results="stats.dailyResults" :streak="playedStreak" />
                     </span>
@@ -233,6 +275,17 @@ usePageSeoMeta({
                 </ol>
             </section>
 
+            <HomeGlance
+                class="home__glance"
+                :detail="dailyDetail"
+                :played-streak="playedStreak"
+                :ready="mounted"
+                :title="dailyTitle"
+                :win-streak="winStreak"
+            />
+            <HomeNumbers class="home__numbers" :ready="mounted" />
+            <HomeAchievements class="home__ach" :ready="mounted" />
+
             <nav aria-label="More" class="home__footer">
                 <NuxtLink class="home__footer-link" to="/how-to-play" @click="selectHowToPlayPage">Full rules</NuxtLink>
                 <NuxtLink class="home__footer-link" to="/privacy" @click="selectPrivacy">Privacy</NuxtLink>
@@ -269,14 +322,24 @@ usePageSeoMeta({
     flex-direction: column;
     gap: 1rem;
     margin: 0 auto;
-    max-width: 36rem;
+    max-width: var(--page-max);
     width: 100%;
 }
 
 // The nav already carries the logo + "Exact XI" wordmark — repeating both
 // again here as visible content was pure duplication. This keeps the page's
 // only <h1> for accessibility/SEO structure without showing it twice.
-.home__visually-hidden-title {
+.home__masthead {
+    display: contents;
+}
+
+.home__date,
+.home__countdown,
+.home__title-desk {
+    display: none;
+}
+
+.home__title {
     border: 0;
     clip-path: inset(50%);
     height: 1px;
@@ -662,6 +725,159 @@ usePageSeoMeta({
 
     .board__title {
         font-size: 5rem;
+    }
+}
+
+@media (width >= 768px) {
+    .steps {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .steps__item {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+}
+
+// ---- Desktop Matchday grid (after Footballdle's Option A board) ----
+@media (width >= 1024px) {
+    .home {
+        padding: 2rem 2rem 5.5rem;
+    }
+
+    .home__inner {
+        align-items: start;
+        display: grid;
+        gap: 1.25rem;
+        grid-template:
+            'mast   mast' auto
+            'board  glance' auto
+            'board  numbers' auto
+            'row    ach' auto
+            'recap  ach' auto
+            'steps  ach' 1fr
+            'footer footer' auto
+            / minmax(0, 1.7fr) minmax(18rem, 1fr);
+    }
+
+    .home__masthead {
+        align-items: flex-end;
+        border-bottom: 1px solid var(--color-line);
+        display: grid;
+        gap: 0 1rem;
+        grid-area: mast;
+        grid-template-columns: minmax(0, 1fr) auto;
+        padding-bottom: 0.75rem;
+    }
+
+    .home__date {
+        color: var(--color-muted);
+        display: block;
+        font-size: 0.75rem;
+        font-weight: 700;
+        grid-column: 1;
+        letter-spacing: 0.12em;
+        margin: 0;
+        text-transform: uppercase;
+    }
+
+    .home__title {
+        clip-path: none;
+        font-family: var(--font-display);
+        font-size: 3rem;
+        font-weight: 900;
+        grid-column: 1;
+        height: auto;
+        line-height: 1;
+        margin: 0;
+        overflow: visible;
+        position: static;
+        text-transform: var(--display-text-transform);
+        white-space: normal;
+        width: auto;
+    }
+
+    .home__title-brand {
+        clip-path: inset(50%);
+        height: 1px;
+        overflow: hidden;
+        position: absolute;
+        white-space: nowrap;
+        width: 1px;
+    }
+
+    .home__title-desk {
+        display: inline;
+    }
+
+    .home__countdown {
+        color: var(--color-muted);
+        display: block;
+        font-size: 0.9rem;
+        grid-column: 2;
+        grid-row: 1 / span 2;
+        margin: 0;
+
+        strong {
+            color: var(--color-foreground);
+            font-family: var(--font-mono);
+            font-variant-numeric: tabular-nums;
+        }
+    }
+
+    .board {
+        align-self: stretch;
+        grid-area: board;
+        justify-content: center;
+        min-height: 20rem;
+        padding: 2rem;
+    }
+
+    .board__title {
+        font-size: 6rem;
+    }
+
+    .board__cta {
+        align-self: flex-start;
+        min-width: 16rem;
+    }
+
+    .home__row {
+        grid-area: row;
+    }
+
+    .home__recap {
+        grid-area: recap;
+    }
+
+    .home__section {
+        grid-area: steps;
+        margin-top: 0;
+    }
+
+    .home__footer {
+        grid-area: footer;
+    }
+
+    .home__glance {
+        grid-area: glance;
+    }
+
+    .home__numbers {
+        grid-area: numbers;
+    }
+
+    .home__ach {
+        align-self: stretch;
+        grid-area: ach;
+    }
+}
+
+@media (width >= 1440px) {
+    .board__title {
+        font-size: 7rem;
     }
 }
 

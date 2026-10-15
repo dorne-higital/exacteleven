@@ -133,6 +133,14 @@ function handleDismiss(): void {
     transform: translateX(-50%) translateY(0.75rem);
 }
 
+// Desktop: centred in the main column, beside the rail (--rail-w is 0
+// whenever there's no rail).
+@media (width >= 1024px) {
+    .achievement-toast {
+        left: calc(var(--rail-w) + (100vw - var(--rail-w)) / 2);
+    }
+}
+
 @media (prefers-reduced-motion: reduce) {
     .achievement-toast {
         transition: opacity 0.25s ease;

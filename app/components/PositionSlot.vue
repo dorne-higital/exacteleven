@@ -318,6 +318,34 @@ function handleClick(): void {
     }
 }
 
+// Desktop's bigger pitch (DESKTOP_SPEC §3.2): sized off the board's own
+// width (.game-board is the container), so phones never match.
+@container (width >= 30rem) {
+    .position-slot__chip {
+        font-size: 1.1rem;
+        height: 3.1rem;
+        width: 3.1rem;
+    }
+
+    .position-slot__name,
+    .position-slot__group {
+        font-size: 0.85rem;
+        max-width: 6rem;
+    }
+
+    .position-slot--tight .position-slot__name,
+    .position-slot--tight .position-slot__group {
+        max-width: 4.5rem;
+    }
+}
+
+// Mouse / trackpad only: an open slot gets a ring in the "next" colour.
+@media (hover: hover) and (pointer: fine) {
+    .position-slot:not(:disabled, .position-slot--filled, .position-slot--active):hover .position-slot__chip {
+        box-shadow: 0 0 0 2px var(--slot-next);
+    }
+}
+
 // The captain's armband: a small bib-red "C" (captain-style highlights are
 // one of red's allowed uses). Bottom-left so it never collides with the
 // locked star (top-right) or the sub marker (bottom-right).

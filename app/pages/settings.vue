@@ -132,7 +132,7 @@ useSeoMeta({ robots: 'noindex, follow' });
         <div class="settings__inner">
             <h1>Settings</h1>
 
-            <section aria-labelledby="settings-appearance" class="settings__card">
+            <section aria-labelledby="settings-appearance" class="settings__card settings__card--appearance">
                 <h2 id="settings-appearance">Appearance</h2>
                 <div
                     aria-labelledby="settings-appearance"
@@ -158,7 +158,7 @@ useSeoMeta({ robots: 'noindex, follow' });
                 <p class="settings__hint">System follows your device's light or dark setting.</p>
             </section>
 
-            <section v-if="isApp" aria-labelledby="settings-kit" class="settings__card">
+            <section v-if="isApp" id="settings-kit-card" aria-labelledby="settings-kit" class="settings__card settings__card--kit">
                 <div class="settings__card-head">
                     <h2 id="settings-kit">Kit Bag</h2>
                     <span v-if="isPro" class="settings__status"><AppIcon name="check" /> Included with Pro</span>
@@ -198,7 +198,7 @@ useSeoMeta({ robots: 'noindex, follow' });
                 <p v-if="!hasThemes" class="settings__hint">All five themes are also included with Pro.</p>
             </section>
 
-            <section v-if="isApp" aria-labelledby="settings-purchases" class="settings__card">
+            <section v-if="isApp" aria-labelledby="settings-purchases" class="settings__card settings__card--purchases">
                 <h2 id="settings-purchases">Purchases</h2>
                 <dl class="settings__rows">
                     <div class="settings__row">
@@ -232,7 +232,7 @@ useSeoMeta({ robots: 'noindex, follow' });
                 </div>
             </section>
 
-            <section v-if="isApp" aria-labelledby="settings-game-center" class="settings__card">
+            <section v-if="isApp" aria-labelledby="settings-game-center" class="settings__card settings__card--gc">
                 <h2 id="settings-game-center">Game Center</h2>
                 <p class="settings__hint">
                     Leaderboards for your best Daily streak, exact Classic wins and best run of exact wins. Games with a boost or
@@ -245,7 +245,7 @@ useSeoMeta({ robots: 'noindex, follow' });
                 <p v-if="!canUseGameCenter" class="settings__hint">Game Center is only available in the iPhone app.</p>
             </section>
 
-            <section v-if="isApp" aria-labelledby="settings-feel" class="settings__card">
+            <section v-if="isApp" aria-labelledby="settings-feel" class="settings__card settings__card--feel">
                 <h2 id="settings-feel">Feel</h2>
                 <div class="settings__row settings__row--switch">
                     <span id="settings-haptics-label">Haptics</span>
@@ -263,7 +263,7 @@ useSeoMeta({ robots: 'noindex, follow' });
                 </div>
             </section>
 
-            <section aria-labelledby="settings-about" class="settings__card">
+            <section aria-labelledby="settings-about" class="settings__card settings__card--about" :class="{ 'settings__card--span': isApp }">
                 <h2 id="settings-about">About</h2>
                 <nav aria-label="About Exact XI" class="settings__links">
                     <NuxtLink class="settings__link" to="/how-to-play" @click="selectHowToPlay">
@@ -300,8 +300,58 @@ useSeoMeta({ robots: 'noindex, follow' });
     flex-direction: column;
     gap: 0.75rem;
     margin: 0 auto;
-    max-width: 36rem;
+    max-width: var(--page-max);
     width: 100%;
+}
+
+// Desktop: two columns. App order is Kit Bag (full width), Appearance | Feel,
+// Purchases | Game Center, About (full width). Web is Appearance | About.
+@media (width >= 1024px) {
+    .settings {
+        padding: 2rem 2rem 5.5rem;
+    }
+
+    .settings__inner {
+        align-items: start;
+        display: grid;
+        gap: 1rem;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        max-width: 60rem;
+    }
+
+    .settings__card--kit {
+        grid-column: 1 / -1;
+        order: 0;
+    }
+
+    .settings__card--appearance {
+        order: 1;
+    }
+
+    .settings__card--feel {
+        order: 2;
+    }
+
+    .settings__card--purchases {
+        order: 3;
+    }
+
+    .settings__card--gc {
+        order: 4;
+    }
+
+    .settings__card--about {
+        order: 5;
+    }
+
+    .settings__card--span {
+        grid-column: 1 / -1;
+    }
+
+    .settings__kits {
+        gap: 0.75rem;
+        grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+    }
 }
 
 // The back pill's look comes from AppHeader (.app-header-back).

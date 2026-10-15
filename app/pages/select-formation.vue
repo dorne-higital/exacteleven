@@ -79,7 +79,7 @@ usePageSeoMeta({
     flex-direction: column;
     gap: 1rem;
     margin: 0 auto;
-    max-width: 36rem;
+    max-width: var(--page-max);
     width: 100%;
 }
 
@@ -219,9 +219,81 @@ h1 {
     flex-shrink: 0;
 }
 
+// Tablet: two rows per line. Desktop: cards in an auto-fill grid, easiest
+// to hardest, target + difficulty in the top-right corner.
+@media (width >= 768px) {
+    .formations {
+        display: grid;
+        gap: 0.75rem;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .formations li {
+        display: flex;
+    }
+
+    .formations__link {
+        flex: 1;
+        min-width: 0;
+    }
+}
+
+@media (width >= 1024px) {
+    .select-formation {
+        padding: 2rem 2rem 5.5rem;
+    }
+
+    .select-formation__intro h1 {
+        font-size: 2.5rem;
+    }
+
+    .formations {
+        gap: 1rem;
+        grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+    }
+
+    .formations__link {
+        align-items: flex-start;
+        flex-direction: column;
+        min-height: 11rem;
+        padding: 1rem;
+        position: relative;
+        transition: border-color 0.15s ease, transform 0.15s ease;
+    }
+
+    .formations__link .formation-icon {
+        height: 4.8rem;
+        width: 4.5rem;
+    }
+
+    .formations__end {
+        position: absolute;
+        right: 1rem;
+        top: 1rem;
+    }
+
+    .formations__target {
+        font-size: 1.35rem;
+    }
+
+    .formations__chevron {
+        display: none;
+    }
+}
+
+@media (width >= 1024px) and (hover: hover) and (pointer: fine) {
+    .formations__link:hover {
+        transform: translateY(-2px);
+    }
+}
+
 @media (prefers-reduced-motion: reduce) {
     .formations__link {
         transition: none;
+    }
+
+    .formations__link:hover {
+        transform: none;
     }
 }
 </style>
