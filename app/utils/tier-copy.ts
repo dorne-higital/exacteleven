@@ -14,7 +14,7 @@ export interface TierCopy {
 
 export const TIER_COPY: Record<ResultTier, TierCopy> = {
     titleWinners: {
-        label: 'Title winners',
+        label: 'Title contenders',
         emoji: '🥈',
         detail: (distance, target) => `${distance} off ${target}, so close it hurts.`,
     },

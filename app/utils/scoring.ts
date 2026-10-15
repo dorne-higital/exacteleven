@@ -20,7 +20,7 @@ export function getDistance(total: number, target: number): number {
 
 // League-table ladder for a non-bust, non-exact finish — worst to best is
 // Relegated < Avoided relegation < Mid-table < Europa League < Champions
-// League < Title winners < Win (exact only, handled separately in
+// League < Title contenders < Win (exact only, handled separately in
 // getGameResult).
 //
 // Retuned in DAILY2_SPEC §1.8 with scripts/simulate.ts modelling the live
@@ -46,7 +46,7 @@ export const TIER_BOUNDARIES: ReadonlyArray<{ tier: ResultTier; maxDistance: num
     { tier: 'relegated', maxDistance: Infinity },
 ];
 
-// The full ladder for one target, Title winners first.
+// The full ladder for one target, Title contenders first.
 export function getTierBoundaries(target: number): ReadonlyArray<{ tier: ResultTier; maxDistance: number }> {
     return [{ tier: 'titleWinners', maxDistance: titleWindowFor(target) }, ...TIER_BOUNDARIES];
 }

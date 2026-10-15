@@ -75,7 +75,7 @@ describe('tierForDistance', () => {
         expect(tierForDistance(1000)).toBe('relegated');
     });
 
-    it('adds the Title winners window with a target, sized by formation', () => {
+    it('adds the Title contenders window with a target, sized by formation', () => {
         const windows: Record<string, number> = { 343: 5, 352: 5, 433: 6, 442: 7, 451: 7, 532: 8, 541: 8 };
 
         for (const [code, w] of Object.entries(windows)) {
@@ -96,7 +96,7 @@ describe('tierForDistance', () => {
 });
 
 describe('isBetterOutcome', () => {
-    it('ranks Title winners between Champions League and an exact win', () => {
+    it('ranks Title contenders between Champions League and an exact win', () => {
         expect(isBetterOutcome('titleWinners', 'championsLeague')).toBe(true);
         expect(isBetterOutcome('champion', 'titleWinners')).toBe(true);
         expect(isBetterOutcome('championsLeague', 'titleWinners')).toBe(false);

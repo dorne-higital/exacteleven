@@ -209,7 +209,7 @@ if (!isApp) {
     --color-slate: #4f5d66;
     --color-bust: var(--color-slate);
 
-    // Result-tier ladder, best to worst. Title winners (a few off the
+    // Result-tier ladder, best to worst. Title contenders (a few off the
     // exact target) sits next to the red exact moment: a deep bib tone,
     // derived from the kit's own bib + ink so every Kit Bag theme follows.
     --tier-title: color-mix(in srgb, var(--color-bib) 62%, var(--color-foreground));

@@ -87,7 +87,7 @@ export function getFormation(code: string): Formation | undefined {
 // formation. The old "343/352 ~20-23% ... 541/532 ~1-2%" comment predated
 // both the server's guaranteed-winnable option and the exact-only win, so
 // it no longer described the game. `exactPct` is the jackpot (landing
-// exactly on target); `titleOrBetterPct` adds the Title winners window.
+// exactly on target); `titleOrBetterPct` adds the Title contenders window.
 // Shared by the formation picker (select-formation.vue) and the stats
 // modal's "which formations get played" chart, so the two never drift apart.
 export interface FormationDifficulty {
@@ -95,7 +95,7 @@ export interface FormationDifficulty {
     tier: 'easier' | 'balanced' | 'hardest';
     /** % of games landing exactly on target (fan model). */
     exactPct: number;
-    /** % of games finishing exact or in the Title winners window (fan model). */
+    /** % of games finishing exact or in the Title contenders window (fan model). */
     titleOrBetterPct: number;
 }
 

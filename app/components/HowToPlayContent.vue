@@ -12,7 +12,7 @@ import { formations } from '../utils/formations';
 import { TIER_BOUNDARIES } from '../utils/scoring';
 import { TIER_COPY } from '../utils/tier-copy';
 
-// The Title winners window scales with the target (1.5% of it), so its
+// The Title contenders window scales with the target (1.5% of it), so its
 // range is shown across every formation ("within 5–8").
 const windows = formations.map((formation) => titleWindowFor(formation.target));
 const titleRange = `within ${Math.min(...windows)}–${Math.max(...windows)}`;
@@ -87,7 +87,7 @@ const points = [
             </div>
             <div class="how-to-play-content__example">
             <p class="how-to-play-content__note">
-                Finish under the target and you land on the table instead. Title winners is a few off the
+                Finish under the target and you land on the table instead. Title contenders is a few off the
                 target (1.5% of it), so it scales with the formation:
             </p>
             <ol class="how-to-play-content__ladder">

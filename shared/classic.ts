@@ -4,7 +4,7 @@
 // scripts/simulate.ts — see README "Balance".
 
 /**
- * The "Title winners" window as a share of the target: finishing 1..W under
+ * The "Title contenders" window as a share of the target: finishing 1..W under
  * the target (W = titleWindowFor(target)) is the new near-miss tier just
  * below the exact jackpot. 1.5% gives W = 5 (343/352), 6 (433), 7 (442/451)
  * and 8 (532/541).
