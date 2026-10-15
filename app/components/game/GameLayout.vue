@@ -106,6 +106,13 @@ watch(() => props.over, (over, was) => {
         padding: 0.25rem 0.25rem 1rem;
         position: sticky;
         top: calc(1rem + env(safe-area-inset-top, 0px));
+
+        // Children keep their full height so the panel scrolls. Without
+        // this, an overflow: hidden child (the result card clips its
+        // confetti) shrinks to fit and its squad list gets cut off.
+        > * {
+            flex-shrink: 0;
+        }
     }
 
     .game-layout__rules {
